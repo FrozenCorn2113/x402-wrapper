@@ -6,7 +6,7 @@ upstream:
   method: GET
   passthrough_params: [ids, vs_currencies, include_market_cap, include_24hr_vol, include_24hr_change]
 pricing:
-  price_usdc: "0.01"
+  price_usdc: "0.001"
   network: base
   asset: USDC
   pay_to: 0xREPLACE_ME_BEFORE_DEPLOY
