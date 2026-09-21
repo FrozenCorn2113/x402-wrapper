@@ -6,7 +6,7 @@ upstream:
   method: GET
   passthrough_params: [latitude, longitude, current, hourly, daily, timezone, forecast_days]
 pricing:
-  price_usdc: "0.005"
+  price_usdc: "0.0005"
   network: base
   asset: USDC
   pay_to: 0xREPLACE_ME_BEFORE_DEPLOY
