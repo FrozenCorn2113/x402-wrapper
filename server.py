@@ -22,7 +22,6 @@ SERVICE_DESCRIPTION = (
     "the Base transaction hash in the X-Payment header."
 )
 
-
 def llms_text() -> str:
     base = core.public_base_url()
     return f"""# x402-wrapper
@@ -49,7 +48,6 @@ Health: GET {base}/health
 Network: Base. Asset: USDC. Receipts are returned with every paid call.
 """
 
-
 @app.get("/health")
 def health():
     return {
@@ -60,12 +58,10 @@ def health():
                    if WRAPPERS else None),
     }
 
-
 @app.get("/v1")
 def list_wrappers():
     """Machine-readable catalog: what agents can buy and for how much."""
     return {"wrappers": core.catalog()}
-
 
 @app.get("/.well-known/x402")
 def well_known_x402():
@@ -94,12 +90,17 @@ def well_known_x402():
         ],
     }
 
+@app.get("/.well-known/402index-verify.txt", response_class=PlainTextResponse)
+def index_402_verify():
+    h = os.environ.get("INDEX_402_VERIFICATION_HASH", "").strip()
+    if not h:
+        return PlainTextResponse("unverified\n", status_code=404)
+    return h + "\n"
 
 @app.get("/llms.txt", response_class=PlainTextResponse)
 def llms_txt():
     """Plain-language service description for agent/LLM discovery."""
     return llms_text()
-
 
 @app.api_route("/v1/{name}", methods=["GET", "POST"])
 async def proxy(
@@ -164,7 +165,6 @@ async def proxy(
         },
         status_code=status,
     )
-
 
 if __name__ == "__main__":
     import uvicorn
