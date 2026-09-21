@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+receipts/
+.git/
+.gitignore
+.env
+*.md
+!requirements.txt
+test.sh
+.DS_Store

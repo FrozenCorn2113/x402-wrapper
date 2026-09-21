@@ -1,0 +1,5 @@
+# Pinned to the versions the local test suite passes against.
+fastapi==0.141.1
+uvicorn==0.53.0
+httpx==0.28.1
+PyYAML==6.0.3
