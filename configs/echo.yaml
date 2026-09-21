@@ -6,7 +6,7 @@ upstream:
   method: GET
   passthrough_params: []  # empty = pass everything through
 pricing:
-  price_usdc: "0.001"
+  price_usdc: "0.0001"
   network: base
   asset: USDC
   pay_to: 0xREPLACE_ME_BEFORE_DEPLOY
