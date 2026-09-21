@@ -1,0 +1,14 @@
+name: crypto-price
+description: Simple crypto price lookup by coin id (via CoinGecko free tier, no key needed).
+upstream:
+  base_url: https://api.coingecko.com
+  path: /api/v3/simple/price
+  method: GET
+  passthrough_params: [ids, vs_currencies, include_market_cap, include_24hr_vol, include_24hr_change]
+pricing:
+  price_usdc: "0.01"
+  network: base
+  asset: USDC
+  pay_to: 0xREPLACE_ME_BEFORE_DEPLOY
+limits:
+  max_per_minute: 15
