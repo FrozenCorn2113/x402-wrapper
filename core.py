@@ -21,7 +21,25 @@ BASE_USDC_CONTRACT = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
 # Sandbox-only egress glue fingerprint; never present on Render/Railway/Fly.
 _HATCH_CA = "/usr/local/share/ca-certificates/hatch-egress-ca.crt"
 USDC_DECIMALS = 6
-X402_VERSION = 1
+X402_VERSION = 2
+
+# Human network names -> CAIP-2 chain ids (x402 v2 requires CAIP-2).
+NETWORK_CAIP2 = {
+    "base": "eip155:8453",
+    "base-sepolia": "eip155:84532",
+    "ethereum": "eip155:1",
+    "sepolia": "eip155:11155111",
+    "polygon": "eip155:137",
+    "avalanche": "eip155:43114",
+}
+
+
+def network_to_caip2(name: str) -> str:
+    """'base' -> 'eip155:8453'. Passes through values already in CAIP-2 form."""
+    name = (name or "").strip()
+    if ":" in name:
+        return name
+    return NETWORK_CAIP2.get(name.lower(), name or "eip155:8453")
 
 
 # --- environment-driven config (12-factor; nothing secret lives in YAML) ---
@@ -87,26 +105,118 @@ def public_base_url() -> str:
     return os.environ.get("PUBLIC_BASE_URL", "http://localhost:8000")
 
 
+def resolve_asset(wrapper: dict) -> str:
+    """x402 v2 wants the token contract address in `asset`, not the symbol."""
+    raw = os.environ.get("USDC_ASSET", "").strip() or wrapper.get("pricing", {}).get(
+        "asset", "USDC"
+    )
+    if raw.startswith("0x") and len(raw) == 42:
+        return raw
+    if raw.upper() == "USDC":
+        return usdc_contract()
+    return raw
+
+
 def make_402(wrapper: dict) -> dict:
-    """x402-shaped 402 response body. Swap the verifier, keep the shape, for v2."""
+    """Official x402 v2 PaymentRequired object.
+
+    Shape per x402-specification-v2 §5.1: x402Version, error, resource (required,
+    with url), accepts[] (exactly scheme/network/amount/asset/payTo/
+    maxTimeoutSeconds/extra). The same object goes in the 402 JSON body and,
+    base64-encoded, in the PAYMENT-REQUIRED response header.
+    """
     pricing = wrapper["pricing"]
+    network = network_to_caip2(
+        os.environ.get("NETWORK", "").strip() or pricing.get("network", "base")
+    )
+    resource_url = f"{public_base_url()}/v1/{wrapper['name']}"
     return {
         "x402Version": X402_VERSION,
         "error": "payment required",
+        "resource": {
+            "url": resource_url,
+            "description": wrapper.get("description", ""),
+            "mimeType": "application/json",
+        },
         "accepts": [
             {
                 "scheme": "exact",
-                "network": os.environ.get("NETWORK", "").strip() or pricing.get("network", "base"),
-                "asset": pricing.get("asset", "USDC"),
+                "network": network,
                 "amount": price_to_atomic(pricing["price_usdc"]),
+                "asset": resolve_asset(wrapper),
                 "payTo": resolve_pay_to(wrapper),
-                "resource": f"{public_base_url()}/v1/{wrapper['name']}",
-                "description": wrapper.get("description", ""),
-                "mimeType": "application/json",
                 "maxTimeoutSeconds": 300,
+                "extra": {
+                    "name": "USDC",
+                    "decimals": USDC_DECIMALS,
+                    "settlement": "direct-transfer",
+                    "howToPay": (
+                        "Send USDC on Base to payTo for at least amount "
+                        "(atomic units), then retry the request with the "
+                        "transaction hash in the X-Payment header."
+                    ),
+                },
             }
         ],
     }
+
+
+def payment_required_headers(wrapper: dict) -> dict:
+    """v2 wire format: base64 PaymentRequired JSON in the PAYMENT-REQUIRED header."""
+    raw = json.dumps(make_402(wrapper), separators=(",", ":")).encode()
+    import base64
+
+    return {"PAYMENT-REQUIRED": base64.b64encode(raw).decode()}
+
+
+def looks_like_payment_payload(proof: str) -> bool:
+    """True if the X-Payment value looks like a base64 x402 PaymentPayload
+    (EIP-3009 authorization) rather than a plain tx hash. We settle by direct
+    transfer, so these get an instructive 402 instead of a silent reject."""
+    if not proof or proof.startswith("0x") or proof.startswith("mock-"):
+        return False
+    try:
+        import base64
+
+        decoded = base64.b64decode(proof + "=" * (-len(proof) % 4)).decode(
+            "utf-8", "ignore"
+        )
+    except Exception:
+        return False
+    return '"authorization"' in decoded or '"signature"' in decoded or '"payload"' in decoded
+
+
+# --- replay protection: each payment proof (tx hash) is spendable exactly once ---
+SPENT_FILE = RECEIPT_DIR / "spent_hashes.json"
+_spent: set[str] | None = None
+
+
+def _load_spent() -> set[str]:
+    global _spent
+    if _spent is None:
+        _spent = set()
+        try:
+            if SPENT_FILE.exists():
+                _spent = set(json.loads(SPENT_FILE.read_text()))
+        except Exception:
+            _spent = set()
+    return _spent
+
+
+def is_spent(proof: str) -> bool:
+    return proof in _load_spent()
+
+
+def mark_spent(proof: str) -> None:
+    spent = _load_spent()
+    if proof in spent:
+        return
+    spent.add(proof)
+    try:
+        RECEIPT_DIR.mkdir(exist_ok=True)
+        SPENT_FILE.write_text(json.dumps(sorted(spent)))
+    except Exception:
+        pass
 
 
 def verify_payment(proof: str | None, wrapper: dict) -> bool:
@@ -115,17 +225,24 @@ def verify_payment(proof: str | None, wrapper: dict) -> bool:
     Live mode (MOCK_PAYMENTS=false + real PAY_TO_ADDRESS): the proof must be a
     Base mainnet tx hash containing a USDC transfer to our address of at least
     the wrapper price. Verified read-only via public RPC; no private keys.
-    """
-    if mock_payments_enabled():
-        return bool(proof) and proof.startswith("mock-")
-    from verify_onchain import verify_tx_hash  # lazy: verify_onchain imports core
 
-    ok, _reason = verify_tx_hash(
-        proof or "",
-        int(price_to_atomic(wrapper["pricing"]["price_usdc"])),
-        resolve_pay_to(wrapper),
-        usdc_contract(),
-    )
+    Either way, a proof is spendable exactly once (replay protection).
+    """
+    if not proof or is_spent(proof):
+        return False
+    if mock_payments_enabled():
+        ok = proof.startswith("mock-")
+    else:
+        from verify_onchain import verify_tx_hash  # lazy: verify_onchain imports core
+
+        ok, _reason = verify_tx_hash(
+            proof,
+            int(price_to_atomic(wrapper["pricing"]["price_usdc"])),
+            resolve_pay_to(wrapper),
+            usdc_contract(),
+        )
+    if ok:
+        mark_spent(proof)
     return ok
 
 

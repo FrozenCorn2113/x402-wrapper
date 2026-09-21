@@ -33,16 +33,19 @@ curl http://127.0.0.1:8000/v1
 curl -i "http://127.0.0.1:8000/v1/weather-now?latitude=43.7&longitude=-79.4&current=temperature_2m"
 
 # 3. Mock-paid call -> 200 with upstream data + receipt
-curl -H "X-Payment-Proof: mock-demo123" \
+curl -H "X-Payment: mock-demo123" \
   "http://127.0.0.1:8000/v1/weather-now?latitude=43.7&longitude=-79.4&current=temperature_2m"
 
-curl -H "X-Payment-Proof: mock-demo123" \
+curl -H "X-Payment: mock-demo123" \
   "http://127.0.0.1:8000/v1/crypto-price?ids=bitcoin&vs_currencies=usd"
 ```
 
-In v2 the `X-Payment-Proof: mock-…` header is replaced by the real x402
-`X-PAYMENT` header carrying a facilitator-signed payload; the 402 response
-shape already matches the x402 spec so clients migrate unchanged.
+Payment uses the standard `X-Payment` header carrying the Base tx hash of a
+direct USDC transfer (verified read-only on-chain; each hash spendable once).
+The 402 challenge follows the official x402 v2 envelope: `x402Version: 2`,
+top-level `resource`, `accepts[]` with CAIP-2 network (`eip155:8453`) and the
+USDC contract address, delivered in the body and base64-encoded in the
+`PAYMENT-REQUIRED` response header. Legacy `X-Payment-Proof` still works.
 
 ## Run the MCP server
 
@@ -85,6 +88,6 @@ service, set env vars:
 | `PORT` | `8000` | Injected automatically by Render/Railway/Fly |
 
 `verify_onchain.py` is the real payment verifier: in live mode the
-`X-Payment-Proof` header must be a Base tx hash of a USDC transfer to
-`PAY_TO_ADDRESS` covering the call price. No private keys anywhere — read-only
-RPC verification.
+`X-Payment` header must be a Base tx hash of a USDC transfer to
+`PAY_TO_ADDRESS` covering the call price (spendable once — replay protected).
+No private keys anywhere — read-only RPC verification.
