@@ -24,3 +24,8 @@
 - Added `GET /llms.txt`: plain-language service description for agent/LLM discovery.
 - Test suite: 17/17 passing (was 13/13).
 - Deploy: live on Render free tier at https://x402-wrapper.onrender.com (mode=live, real Base USDC verification). GitHub: https://github.com/FrozenCorn2113/x402-wrapper (public).
+
+
+## 2026-09-21 — near-free pricing + 402index domain verification
+- 10x price cut (near-free experiment): weather-now $0.005 -> $0.0005/call (500 atomic USDC), crypto-price $0.01 -> $0.001/call (1000 atomic USDC), echo $0.001 -> $0.0001/call (100 atomic USDC).
+- Added `GET /.well-known/402index-verify.txt`: serves the 402index domain-verification hash from the `INDEX_402_VERIFICATION_HASH` env var (404 "unverified" when unset), for 402index.io domain claim verification.
