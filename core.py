@@ -147,7 +147,7 @@ def make_402(wrapper: dict) -> dict:
                 "payTo": resolve_pay_to(wrapper),
                 "maxTimeoutSeconds": 300,
                 "extra": {
-                    "name": "USDC",
+                    "name": "USD Coin",
                     "decimals": USDC_DECIMALS,
                     "settlement": "direct-transfer",
                     "howToPay": (
