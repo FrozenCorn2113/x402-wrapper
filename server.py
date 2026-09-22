@@ -51,7 +51,11 @@ This proxy watches for runaway agents: 25+ identical calls from one client
 within 60 seconds trips a 5-minute cooldown for that exact request shape
 (HTTP 429, code AGENT_LOOP_DETECTED, Retry-After header). You are never
 charged for blocked calls. It is financial insurance for autonomous loops —
-tune via LOOP_* env vars.
+tune via LOOP_* env vars. Verify it yourself: GET {base}/v1/loop-protection
+returns the policy plus live block counters (loops_tripped,
+loop_blocked_calls, rate_blocked_calls) and an honesty note explaining how
+to falsify the policy independently — 25+ identical unpaid calls to any
+/v1/{{wrapper}} must return HTTP 429 AGENT_LOOP_DETECTED.
 
 Machine-readable catalog: GET {base}/v1
 Discovery manifest: GET {base}/.well-known/x402
@@ -75,6 +79,18 @@ def health():
 def list_wrappers():
     """Machine-readable catalog: what agents can buy and for how much."""
     return {"wrappers": core.catalog(), "loop_protection": circuit_breaker.describe()}
+
+
+@app.get("/v1/loop-protection")
+def loop_protection_report():
+    """Pollable loop-protection policy + live block counters.
+
+    Answers the buyer-verifiability question: poll this to see the loop
+    policy and what the breaker has actually blocked. Honest framing —
+    counters are process-local and operator-published; the response's
+    honesty field states exactly how to falsify the policy independently.
+    """
+    return circuit_breaker.public_report()
 
 
 @app.get("/.well-known/x402")

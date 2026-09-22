@@ -71,11 +71,35 @@ check "crypto-price paid -> 200" 200 -H "X-Payment: mock-v2crypto1" \
 grep -qi 'bitcoin' /tmp/wrap_test.json && echo "PASS: coingecko data" && pass=$((pass+1)) || { echo "FAIL: coingecko data"; fail=$((fail+1)); }
 
 echo "--- receipts log ---"
-ls receipts/*.jsonl >/dev/null 2>&1 && [ "$(wc -l < receipts/*.jsonl | tail -1 | awk '{print $1}')" -ge 2 ] \
+# NB: cat the glob instead of redirecting it — "< receipts/*.jsonl" breaks
+# with "ambiguous redirect" once more than one daily jsonl exists.
+ls receipts/*.jsonl >/dev/null 2>&1 && [ "$(cat receipts/*.jsonl | wc -l)" -ge 2 ] \
   && echo "PASS: receipts logged" && pass=$((pass+1)) || { echo "FAIL: receipts"; fail=$((fail+1)); }
 
 echo "--- unknown wrapper ---"
 check "unknown -> 404" 404 -H "X-Payment: mock-x" "$BASE/v1/nope"
+
+echo "--- loop protection (circuit breaker) ---"
+# 30 identical unpaid calls from one client: threshold is 25/60s.
+for i in $(seq 1 30); do
+  curl -s -o /dev/null "$BASE/v1/echo?msg=looptest-shape-A" || true
+done
+check "identical loop trips -> 429" 429 "$BASE/v1/echo?msg=looptest-shape-A"
+grep -q 'AGENT_LOOP_DETECTED' /tmp/wrap_test.json && echo "PASS: loop payload code" && pass=$((pass+1)) || { echo "FAIL: loop payload code"; fail=$((fail+1)); }
+grep -qi '^retry-after:' /tmp/wrap_headers.txt && echo "PASS: Retry-After header present" && pass=$((pass+1)) || { echo "FAIL: Retry-After header"; fail=$((fail+1)); }
+grep -qi '^x-loop-protection: tripped' /tmp/wrap_headers.txt && echo "PASS: X-Loop-Protection header" && pass=$((pass+1)) || { echo "FAIL: X-Loop-Protection header"; fail=$((fail+1)); }
+# Cooldown is per request shape: different params from the same client pass.
+check "different params not tripped" 402 "$BASE/v1/echo?msg=looptest-shape-B"
+# Identity isolation: a different client sending the same looping shape passes.
+check "different client not tripped" 402 -H "X-Forwarded-For: 203.0.113.9" "$BASE/v1/echo?msg=looptest-shape-A"
+# Catalog advertises the breaker config.
+check "catalog exposes loop_protection" 200 "$BASE/v1"
+grep -q 'loop_protection' /tmp/wrap_test.json && grep -q 'identical_threshold' /tmp/wrap_test.json && echo "PASS: catalog loop_protection content" && pass=$((pass+1)) || { echo "FAIL: catalog loop_protection"; fail=$((fail+1)); }
+
+# Pollable loop-protection report (buyer-verifiability counter).
+check "loop-protection report -> 200" 200 "$BASE/v1/loop-protection"
+grep -q '"loops_tripped":[ ]\?[1-9]' /tmp/wrap_test.json && grep -q '"loop_blocked_calls":[ ]\?[1-9]' /tmp/wrap_test.json && echo "PASS: report counters reflect the tripped loop" && pass=$((pass+1)) || { echo "FAIL: report counters"; fail=$((fail+1)); }
+grep -q '"honesty"' /tmp/wrap_test.json && grep -q '"identical_threshold"' /tmp/wrap_test.json && echo "PASS: report honesty + policy fields" && pass=$((pass+1)) || { echo "FAIL: report honesty/policy"; fail=$((fail+1)); }
 
 echo ""
 echo "RESULT: $pass passed, $fail failed"

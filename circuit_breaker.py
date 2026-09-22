@@ -114,11 +114,21 @@ class CircuitBreaker:
         self._calls: dict[str, deque[tuple[float, str]]] = {}
         # (identity, fingerprint) -> cooldown expiry timestamp
         self._cooldowns: dict[tuple[str, str], float] = {}
+        # Pollable honesty counters (see public_report). Process-local:
+        # Render's free tier runs one worker, so these reflect the whole
+        # service. They are operator-published — trust the deployment, or
+        # falsify the policy with the public challenge harness instead.
+        self._started_at = time.time()
+        self.loops_tripped = 0        # cooldown entries created
+        self.loop_blocked_calls = 0   # calls refused while a cooldown held
+        self.rate_blocked_calls = 0   # calls refused by the per-minute cap
 
     def reset(self) -> None:
         with self._lock:
             self._calls.clear()
             self._cooldowns.clear()
+            # Honesty counters survive reset(): they are the public audit
+            # trail, not per-test state. Tests use fresh instances instead.
 
     def _prune(self, identity: str, now: float) -> deque[tuple[float, str]]:
         dq = self._calls.get(identity)
@@ -142,6 +152,7 @@ class CircuitBreaker:
         with self._lock:
             cool_until = self._cooldowns.get(key)
             if cool_until and now < cool_until:
+                self.loop_blocked_calls += 1
                 return {**loop_error(identity, fp, int(cool_until - now)),
                         "retry_after": int(cool_until - now)}
             if cool_until:
@@ -151,15 +162,28 @@ class CircuitBreaker:
             dq.append((now, fp))
 
             if len(dq) > RATE_LIMIT_PER_MIN:
+                self.rate_blocked_calls += 1
                 return {**rate_error(identity, 60), "retry_after": 60}
 
             identical = sum(1 for _, f in dq if f == fp)
             if identical >= IDENTICAL_THRESHOLD:
                 cool_until = now + COOLDOWN_SECONDS
                 self._cooldowns[key] = cool_until
+                self.loops_tripped += 1
                 return {**loop_error(identity, fp, COOLDOWN_SECONDS),
                         "retry_after": COOLDOWN_SECONDS}
             return None
+
+    def stats(self) -> dict:
+        """Pollable honesty counters for buyers (see public_report)."""
+        with self._lock:
+            return {
+                "loops_tripped": self.loops_tripped,
+                "loop_blocked_calls": self.loop_blocked_calls,
+                "rate_blocked_calls": self.rate_blocked_calls,
+                "active_cooldowns": len(self._cooldowns),
+                "process_started_unix": int(self._started_at),
+            }
 
 
 # Process-wide instance; Render free tier runs a single worker by default.
@@ -175,4 +199,31 @@ def describe() -> dict:
         "cooldown_seconds": COOLDOWN_SECONDS,
         "rate_limit_per_minute": RATE_LIMIT_PER_MIN,
         "identity_source": "X-Forwarded-For or peer IP (payment proofs excluded by design)",
+    }
+
+
+def public_report() -> dict:
+    """Pollable loop-protection report for buyers.
+
+    Served at GET /v1/loop-protection. Answers the verifiability question:
+    the policy plus the live counters a buyer can poll to see what the
+    breaker has actually blocked. Honest limitation, stated plainly: the
+    counters are process-local and operator-published, so they still
+    require trusting the deployment. A buyer who wants independent proof
+    should run the public challenge harness (send 25+ identical unpaid
+    calls and watch for HTTP 429 AGENT_LOOP_DETECTED) rather than trust
+    these numbers.
+    """
+    return {
+        "policy": describe(),
+        "stats": breaker.stats(),
+        "poll": "GET /v1/loop-protection",
+        "honesty": (
+            "Counters are process-local (single worker) and operator-"
+            "published; they require trusting this deployment. Independent "
+            "verification: the challenge harness — 25+ identical unpaid "
+            "calls to any /v1/{wrapper} must return HTTP 429 with code "
+            "AGENT_LOOP_DETECTED; blocked calls are never charged and never "
+            "forwarded upstream."
+        ),
     }
