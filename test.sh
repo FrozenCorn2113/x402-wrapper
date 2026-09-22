@@ -9,7 +9,7 @@ $PY server.py & SRV=$!
 trap "kill $SRV 2>/dev/null" EXIT
 sleep 3
 # Replay-protection state persists across runs; reset for a hermetic test.
-rm -f receipts/spent_hashes.json
+rm -f receipts/spent_hashes.json challenge-log/challenge_log.jsonl challenge-log/challenge_log.jsonl.bak
 
 pass=0; fail=0
 check() { # check <label> <expected_code> <curl args...>
@@ -100,6 +100,19 @@ grep -q 'loop_protection' /tmp/wrap_test.json && grep -q 'identical_threshold' /
 check "loop-protection report -> 200" 200 "$BASE/v1/loop-protection"
 grep -q '"loops_tripped":[ ]\?[1-9]' /tmp/wrap_test.json && grep -q '"loop_blocked_calls":[ ]\?[1-9]' /tmp/wrap_test.json && echo "PASS: report counters reflect the tripped loop" && pass=$((pass+1)) || { echo "FAIL: report counters"; fail=$((fail+1)); }
 grep -q '"honesty"' /tmp/wrap_test.json && grep -q '"identical_threshold"' /tmp/wrap_test.json && echo "PASS: report honesty + policy fields" && pass=$((pass+1)) || { echo "FAIL: report honesty/policy"; fail=$((fail+1)); }
+
+echo "--- freshness beacon + challenge log ---"
+check "freshness beacon -> 200" 200 "$BASE/v1/freshness"
+grep -q 'last_independently_challenged_at' /tmp/wrap_test.json && grep -q 'challenged_by' /tmp/wrap_test.json && grep -q '"staleness_seconds":null' /tmp/wrap_test.json && echo "PASS: empty beacon shape (no challenges yet)" && pass=$((pass+1)) || { echo "FAIL: empty beacon shape"; fail=$((fail+1)); }
+check "challenge log (empty) -> 200" 200 "$BASE/v1/challenge-log"
+grep -q '"challenges":\[\]' /tmp/wrap_test.json && echo "PASS: empty log" && pass=$((pass+1)) || { echo "FAIL: empty log"; fail=$((fail+1)); }
+check "submit challenge -> 201" 201 -X POST -H 'Content-Type: application/json' -d '{"challenged_by":"harness-ci v1","challenge_type":"identical-loop-harness","result":"pass","details":"25 identical unpaid calls to /v1/echo all returned 429 AGENT_LOOP_DETECTED"}' "$BASE/v1/challenge-log"
+grep -q '"id":1' /tmp/wrap_test.json && grep -q '"result":"pass"' /tmp/wrap_test.json && echo "PASS: stored entry shape" && pass=$((pass+1)) || { echo "FAIL: stored entry shape"; fail=$((fail+1)); }
+check "bad submit (missing fields) -> 422" 422 -X POST -H 'Content-Type: application/json' -d '{"result":"pass"}' "$BASE/v1/challenge-log"
+check "bad submit (bad result) -> 422" 422 -X POST -H 'Content-Type: application/json' -d '{"challenged_by":"x","challenge_type":"y","result":"maybe","details":"z"}' "$BASE/v1/challenge-log"
+check "freshness beacon reflects submission" 200 "$BASE/v1/freshness"
+grep -q '"challenged_by":"harness-ci v1"' /tmp/wrap_test.json && grep -q '"last_result":"pass"' /tmp/wrap_test.json && grep -qv '"staleness_seconds":null' /tmp/wrap_test.json && echo "PASS: beacon shows latest independent challenge" && pass=$((pass+1)) || { echo "FAIL: beacon after submit"; fail=$((fail+1)); }
+grep -q '"target_interval_seconds": *3600' /tmp/wrap_test.json && echo "PASS: week-1 hourly cadence" && pass=$((pass+1)) || { echo "FAIL: cadence"; fail=$((fail+1)); }
 
 echo ""
 echo "RESULT: $pass passed, $fail failed"

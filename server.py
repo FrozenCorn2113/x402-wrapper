@@ -3,6 +3,7 @@ when MOCK_PAYMENTS=false and a real PAY_TO_ADDRESS is configured."""
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import time
 from urllib.parse import urlencode
@@ -11,6 +12,7 @@ from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 import circuit_breaker
+import challenge_log
 import core
 
 app = FastAPI(title="x402 Middleman Wrapper")
@@ -56,6 +58,13 @@ returns the policy plus live block counters (loops_tripped,
 loop_blocked_calls, rate_blocked_calls) and an honesty note explaining how
 to falsify the policy independently — 25+ identical unpaid calls to any
 /v1/{{wrapper}} must return HTTP 429 AGENT_LOOP_DETECTED.
+Freshness beacon: GET {base}/v1/freshness shows the last independently
+submitted challenge-harness result (last_independently_challenged_at,
+challenged_by) measured against the published challenge cadence, so
+staleness is visible without trusting us. Run the harness, then POST your
+result to {base}/v1/challenge-log (public, append-only); the full log is
+GET {base}/v1/challenge-log. Operator runs are never logged — your
+independence is the whole point.
 
 Machine-readable catalog: GET {base}/v1
 Discovery manifest: GET {base}/.well-known/x402
@@ -79,6 +88,50 @@ def health():
 def list_wrappers():
     """Machine-readable catalog: what agents can buy and for how much."""
     return {"wrappers": core.catalog(), "loop_protection": circuit_breaker.describe()}
+
+
+@app.get("/v1/freshness")
+def freshness_beacon():
+    """Freshness beacon: last independent breaker challenge + staleness.
+
+    Answers clawdsmith's "who checks, and how often" critique: the last
+    independently-submitted challenge harness result, measured against the
+    published cadence, so staleness is visible to a lazy buyer without
+    trusting operator-published counters.
+    """
+    return challenge_log.freshness_report()
+
+
+@app.get("/v1/challenge-log")
+def get_challenge_log(limit: int = 100):
+    """Public append-only log of independent breaker challenge results."""
+    return {
+        "challenges": challenge_log.read_all(min(max(limit, 1), 500)),
+        "submit": "POST /v1/challenge-log",
+    }
+
+
+@app.post("/v1/challenge-log")
+async def post_challenge_log(request: Request):
+    """Submit an independent breaker challenge result.
+
+    Body (JSON): challenged_by (<=200 chars), challenge_type (<=100),
+    result in [pass, fail, inconclusive], details (<=2000). Append-only;
+    operator runs are never logged here — independence is the submitter's.
+    """
+    if not client_identity(request):
+        return JSONResponse({"error": "identity required"}, status_code=400)
+    raw = await request.body()
+    if len(raw) > 8192:
+        return JSONResponse({"error": "body too large (8KB max)"}, status_code=413)
+    try:
+        body = json.loads(raw) if raw else {}
+    except Exception:
+        return JSONResponse({"error": "body must be valid JSON"}, status_code=400)
+    entry, err = challenge_log.submit(body)
+    if err:
+        return JSONResponse({"error": err}, status_code=422)
+    return JSONResponse(entry, status_code=201)
 
 
 @app.get("/v1/loop-protection")

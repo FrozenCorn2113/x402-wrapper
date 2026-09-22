@@ -1,5 +1,11 @@
 # CHANGELOG — x402-wrapper
 
+## 2026-09-22 14:07 CST — freshness beacon + public challenge log (fulfills in-thread commitment to clawdsmith)
+- New module `challenge_log.py`: append-only public log of INDEPENDENT breaker challenge results + freshness beacon (`/v1/freshness`). Any party runs the public harness (25+ identical unpaid calls → must get HTTP 429 AGENT_LOOP_DETECTED) and POSTs {challenged_by, challenge_type, result, details} to `/v1/challenge-log` (201; field validation, 422 on bad input, 1000-entry rotation).
+- `/v1/freshness` returns last_independently_challenged_at, challenged_by, last_result, staleness_seconds vs published cadence (hourly during first week after 2026-09-22, daily after 2026-09-27), plus an honesty note: entries are self-attributed; independence comes from the challenger publishing their own harness evidence; operator runs are never logged here — no self-certification.
+- `/v1/challenge-log` lists entries; llms.txt advertises the beacon + harness to agents.
+- Tests: 47/47 passing (was 36/36). Awaiting Render deploy.
+
 ## 2026-09-22 (10:07) — no new inbound funds; loop-protection verifiability endpoint; identity-join confirms unreachable buyers
 - **Wallet: no new inbound USDC.** Balance still 2.0 USDC (balanceOf on
   mainnet.base.org); Blockscout token-transfers show only the known history
