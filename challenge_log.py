@@ -1,0 +1,146 @@
+"""Public challenge log + freshness beacon for loop-protection verifiability.
+
+clawdsmith's critique (Moltbook, 2026-09-22): a static policy page "fixes who
+can check, not how often" — a lazy buyer can't tell a stale breaker from a
+dead one. The committed design:
+
+  * any party (a buyer, a third-party monitor) can RUN the challenge harness:
+    25+ identical unpaid calls to any /v1/{wrapper}; the breaker must return
+    HTTP 429 AGENT_LOOP_DETECTED;
+  * the challenger POSTs the result here; this log is append-only and public;
+  * GET /v1/freshness shows the last independently-submitted challenge
+    (last_independently_challenged_at, challenged_by) plus staleness vs the
+    published cadence, so staleness is visible to a lazy buyer.
+
+No self-certification: the operator's own runs are NOT logged as independent
+challenges, and entries are self-attributed by the submitter — independence
+comes from the challenger publishing their own harness evidence, not from
+this server vouching for them. Field caps keep the log abuse-resistant
+(spam is self-defeating: it only makes the log less credible).
+"""
+from __future__ import annotations
+
+import json
+import os
+import threading
+import time
+
+_LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "challenge-log")
+_LOG_FILE = os.path.join(_LOG_DIR, "challenge_log.jsonl")
+_MAX_ENTRIES = 1000
+_MAX_BY = 200
+_MAX_TYPE = 100
+_MAX_DETAILS = 2000
+_RESULTS = ("pass", "fail", "inconclusive")
+
+# Published challenge cadence: hourly during the first week after the breaker
+# shipped publicly (2026-09-22), then daily. Staleness is measured against
+# this cadence so a lazy buyer can see at a glance whether the beaker is
+# being checked as often as promised.
+_CADENCE_POLICY = {
+    "first_week_interval_seconds": 3600,
+    "steady_interval_seconds": 86400,
+    "steady_after_unix": 1790467200,  # 2026-09-27T00:00:00Z
+    "harness": (
+        "25+ identical unpaid calls to any /v1/{wrapper} must return HTTP 429 "
+        "with error code AGENT_LOOP_DETECTED; blocked calls are never charged "
+        "and never forwarded upstream. Publish your harness code and run logs; "
+        "submit {challenged_by, challenge_type, result, details} to "
+        "POST /v1/challenge-log."
+    ),
+}
+
+_lock = threading.Lock()
+
+
+def _ensure_dir() -> None:
+    os.makedirs(_LOG_DIR, exist_ok=True)
+
+
+def _valid(entry: dict) -> str | None:
+    if not isinstance(entry, dict):
+        return "body must be a JSON object"
+    for key, cap in (("challenged_by", _MAX_BY),
+                     ("challenge_type", _MAX_TYPE),
+                     ("details", _MAX_DETAILS)):
+        val = entry.get(key, "")
+        if not isinstance(val, str) or not val.strip():
+            return f"missing or empty '{key}'"
+        if len(val) > cap:
+            return f"'{key}' exceeds {cap} chars"
+    if entry.get("result") not in _RESULTS:
+        return f"'result' must be one of {_RESULTS}"
+    return None
+
+
+def submit(entry: dict) -> tuple[dict | None, str | None]:
+    """Append a challenge result. Returns (stored_entry, error)."""
+    err = _valid(entry)
+    if err:
+        return None, err
+    with _lock:
+        _ensure_dir()
+        lines: list[str] = []
+        if os.path.exists(_LOG_FILE):
+            with open(_LOG_FILE, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        # Rotation: keep the newest _MAX_ENTRIES; old evidence is archived.
+        if len(lines) >= _MAX_ENTRIES:
+            with open(_LOG_FILE + ".bak", "w", encoding="utf-8") as f:
+                f.writelines(lines[: len(lines) - _MAX_ENTRIES + 1])
+            lines = lines[len(lines) - _MAX_ENTRIES + 1 :]
+        stored = {
+            "id": len(lines) + 1,
+            "submitted_at_unix": int(time.time()),
+            "challenged_by": entry["challenged_by"].strip(),
+            "challenge_type": entry["challenge_type"].strip(),
+            "result": entry["result"],
+            "details": entry["details"].strip(),
+        }
+        with open(_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(stored) + "\n")
+    return stored, None
+
+
+def read_all(limit: int = 100) -> list[dict]:
+    with _lock:
+        if not os.path.exists(_LOG_FILE):
+            return []
+        with open(_LOG_FILE, "r", encoding="utf-8") as f:
+            rows = [json.loads(line) for line in f if line.strip()]
+    return rows[-limit:]
+
+
+def _target_interval(now: float) -> int:
+    return (_CADENCE_POLICY["first_week_interval_seconds"]
+            if now < _CADENCE_POLICY["steady_after_unix"]
+            else _CADENCE_POLICY["steady_interval_seconds"])
+
+
+def freshness_report() -> dict:
+    """Freshness beacon: the last independently submitted challenge + staleness."""
+    entries = read_all(1)
+    now = int(time.time())
+    interval = _target_interval(now)
+    latest = entries[-1] if entries else None
+    stale_seconds = now - latest["submitted_at_unix"] if latest else None
+    return {
+        "cadence": _CADENCE_POLICY,
+        "target_interval_seconds": interval,
+        "last_independently_challenged_at": (
+            latest["submitted_at_unix"] if latest else None),
+        "challenged_by": latest["challenged_by"] if latest else None,
+        "last_result": latest["result"] if latest else None,
+        "staleness_seconds": stale_seconds,
+        "fresh": bool(latest) and stale_seconds is not None and stale_seconds <= interval * 1.5,
+        "challenges_recorded": len(read_all(_MAX_ENTRIES)),
+        "log": "GET /v1/challenge-log",
+        "honesty": (
+            "Entries are self-submitted by challengers (challenged_by is a "
+            "self-asserted label). Independence comes from the challenger "
+            "publishing their own harness code and run logs — the "
+            "operator's own runs are never logged here. A stale beacon means "
+            "nobody has run the harness recently; it says nothing about "
+            "whether the breaker is broken — run the harness yourself."
+        ),
+    }
