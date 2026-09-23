@@ -8,6 +8,8 @@ dead one. The committed design:
     25+ identical unpaid calls to any /v1/{wrapper}; the breaker must return
     HTTP 429 AGENT_LOOP_DETECTED;
   * the challenger POSTs the result here; this log is append-only and public;
+  * every entry is hash-chained (SHA-256 of the previous entry), so silent
+    tampering breaks the chain and is visible via GET /v1/freshness;
   * GET /v1/freshness shows the last independently-submitted challenge
     (last_independently_challenged_at, challenged_by) plus staleness vs the
     published cadence, so staleness is visible to a lazy buyer.
@@ -20,6 +22,7 @@ this server vouching for them. Field caps keep the log abuse-resistant
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import threading
@@ -49,6 +52,23 @@ _CADENCE_POLICY = {
         "POST /v1/challenge-log."
     ),
 }
+
+# Hash chaining (clawdsmith's Moltbook question, 2026-09-23): every entry carries
+# the SHA-256 of the previous entry, so silent tampering with the public log
+# breaks the chain and is visible to any verifier. First entry chains to a
+# fixed genesis constant.
+_GENESIS = "0" * 64
+
+
+def _canonical(entry: dict) -> bytes:
+    """Deterministic bytes for hashing: entry without its own entry_hash."""
+    body = {k: v for k, v in entry.items() if k != "entry_hash"}
+    return json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _hash(entry: dict) -> str:
+    return hashlib.sha256(_canonical(entry)).hexdigest()
+
 
 _lock = threading.Lock()
 
@@ -96,7 +116,11 @@ def submit(entry: dict) -> tuple[dict | None, str | None]:
             "challenge_type": entry["challenge_type"].strip(),
             "result": entry["result"],
             "details": entry["details"].strip(),
+            "prev_hash": (json.loads(lines[-1])["entry_hash"]
+                          if lines and json.loads(lines[-1]).get("entry_hash")
+                          else _GENESIS),
         }
+        stored["entry_hash"] = _hash(stored)
         with open(_LOG_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps(stored) + "\n")
     return stored, None
@@ -109,6 +133,34 @@ def read_all(limit: int = 100) -> list[dict]:
         with open(_LOG_FILE, "r", encoding="utf-8") as f:
             rows = [json.loads(line) for line in f if line.strip()]
     return rows[-limit:]
+
+
+def verify_chain() -> dict:
+    """Verify the hash chain over the whole log.
+
+    Returns chain_valid, entries_checked, and first_bad_id (or None). Entries
+    stored before hash chaining shipped have no hashes and break the chain —
+    that's reported honestly rather than papered over.
+    """
+    rows = read_all(_MAX_ENTRIES)
+    expected_prev = _GENESIS
+    checked = 0
+    first_bad = None
+    for row in rows:
+        checked += 1
+        eh = row.get("entry_hash")
+        ph = row.get("prev_hash")
+        if (not isinstance(eh, str) or not isinstance(ph, str)
+                or len(eh) != 64 or len(ph) != 64
+                or ph != expected_prev or _hash(row) != eh):
+            first_bad = row.get("id")
+            break
+        expected_prev = eh
+    return {
+        "chain_valid": first_bad is None,
+        "entries_checked": checked if first_bad is None else checked - 1,
+        "first_bad_id": first_bad,
+    }
 
 
 def _target_interval(now: float) -> int:
@@ -134,6 +186,7 @@ def freshness_report() -> dict:
         "staleness_seconds": stale_seconds,
         "fresh": bool(latest) and stale_seconds is not None and stale_seconds <= interval * 1.5,
         "challenges_recorded": len(read_all(_MAX_ENTRIES)),
+        "chain": verify_chain(),
         "log": "GET /v1/challenge-log",
         "honesty": (
             "Entries are self-submitted by challengers (challenged_by is a "
