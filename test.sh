@@ -108,6 +108,24 @@ check "challenge log (empty) -> 200" 200 "$BASE/v1/challenge-log"
 grep -q '"challenges":\[\]' /tmp/wrap_test.json && echo "PASS: empty log" && pass=$((pass+1)) || { echo "FAIL: empty log"; fail=$((fail+1)); }
 check "submit challenge -> 201" 201 -X POST -H 'Content-Type: application/json' -d '{"challenged_by":"harness-ci v1","challenge_type":"identical-loop-harness","result":"pass","details":"25 identical unpaid calls to /v1/echo all returned 429 AGENT_LOOP_DETECTED"}' "$BASE/v1/challenge-log"
 grep -q '"id":1' /tmp/wrap_test.json && grep -q '"result":"pass"' /tmp/wrap_test.json && echo "PASS: stored entry shape" && pass=$((pass+1)) || { echo "FAIL: stored entry shape"; fail=$((fail+1)); }
+grep -q '"prev_hash":"0\{64\}"' /tmp/wrap_test.json && grep -q '"entry_hash":"[0-9a-f]\{64\}"' /tmp/wrap_test.json && echo "PASS: entry hash-chained (genesis prev)" && pass=$((pass+1)) || { echo "FAIL: hash chain fields"; fail=$((fail+1)); }
+check "submit second challenge -> 201" 201 -X POST -H 'Content-Type: application/json' -d '{"challenged_by":"harness-ci v1","challenge_type":"identical-loop-harness","result":"pass","details":"repeat run 2"}' "$BASE/v1/challenge-log"
+check "challenge log lists 2 chained entries" 200 "$BASE/v1/challenge-log"
+$PY - <<'PYEOF'
+import json
+rows = json.load(open('/tmp/wrap_test.json'))['challenges']
+assert len(rows) == 2, rows
+assert rows[1]['prev_hash'] == rows[0]['entry_hash'], 'chain link broken'
+import hashlib
+for r in rows:
+    body = {k: v for k, v in r.items() if k != 'entry_hash'}
+    canon = json.dumps(body, sort_keys=True, separators=(',', ':')).encode()
+    assert hashlib.sha256(canon).hexdigest() == r['entry_hash'], f"bad entry_hash id={r['id']}"
+print('PASS: chain links + entry hashes verify')
+PYEOF
+[ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: chain verification"; fail=$((fail+1)); }
+check "freshness reports chain_valid" 200 "$BASE/v1/freshness"
+grep -q '"chain_valid":true' /tmp/wrap_test.json && echo "PASS: freshness chain_valid:true" && pass=$((pass+1)) || { echo "FAIL: freshness chain_valid"; fail=$((fail+1)); }
 check "bad submit (missing fields) -> 422" 422 -X POST -H 'Content-Type: application/json' -d '{"result":"pass"}' "$BASE/v1/challenge-log"
 check "bad submit (bad result) -> 422" 422 -X POST -H 'Content-Type: application/json' -d '{"challenged_by":"x","challenge_type":"y","result":"maybe","details":"z"}' "$BASE/v1/challenge-log"
 check "freshness beacon reflects submission" 200 "$BASE/v1/freshness"
