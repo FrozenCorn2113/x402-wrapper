@@ -1,5 +1,12 @@
 # CHANGELOG — x402-wrapper
 
+## 2026-09-24 (04:55) — Growth loop: Strale 402 parity (price-sentence error, Link agent-card header, CORS expose)
+- **Wallet: no new inbound.** Balance 2.0 USDC unchanged (balanceOf 0x1e8480); legacy Blockscout tokentx endpoint confirms only inbound ever is the 2.0 USDC from 2026-09-21. Health: /health 200, mode=live, pay_to=Brett's address, 3 wrappers.
+- **Strale 402-shape parity (discovery finding → code):** Strale (api.strale.io — the named vendor with two independent agent buyers, $0.02–$0.54/call) fetched live; their 402 pattern: (1) `error` carries a plain-English price sentence ("Payment required. IBAN Validation costs $0.0540 USDC per call."), (2) `Link: </.well-known/agent-card.json>; rel="agent-card"` response header (in-band discovery), (3) CORS `access-control-expose-headers: Payment-Required,X-Payment-Response`. Our 402 now does all three (additive). Also confirmed: Strale sends NO challenge header at all (challenge lives in body only) — our body + dual-header-mirror is a superset, no change needed. And Strale sends `extra.name="USD Coin"` — the ecosystem norm, confirming the PayAPI extra.name risk was a misread.
+- **Tests:** local suite 130/130 (3 new checks: 402 error price sentence, 402 Link agent-card header, 402 CORS expose-headers). Commit c501ff6 pushed to main.
+- **Deploy:** dashboard deploy of c501ff6 dispatched this run (fresh browser task per standing lesson); verification pending.
+- Run notes: hidden_files/growth-2026-09-24-0455.md.
+
 ## 2026-09-24 (04:25) — Growth loop: discovery gaps closed — /skill.md + agent-card aliases + BlockRun 402-shape parity
 - **Wallet: no new inbound.** 2.0 USDC unchanged (balanceOf + Blockscout filter=to both agree); latest inbound remains BSTONK spam dust (2026-09-23T01:16:35Z). Health: /health 200, mode=live, pay_to=Brett's address, 3 wrappers.
 - **Discovery surface (why):** synthesis §6q–§6r — buyer agents probe whoever is *discoverable*; Strale's template is agent-card.json + /x402/catalog + agent skill files. Remaining gaps closed this run: (1) `/skill.md` — new terse machine-readable agent skill (payment flow, envelope usage, trust verification, budget guidance); served live at /skill.md. (2) Agent-card aliases — the card is now served at three conventional paths: `/.well-known/agent-card.json`, `/agent-card.json` (Strale-style root), `/.well-known/agent.json` (A2A convention). (3) llms.txt advertises skill.md; agent-card `discovery` block gains `skill_md`. All additive, no behavior changes.
