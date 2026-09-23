@@ -71,6 +71,9 @@ grep -q '"network":"eip155:8453"' /tmp/wrap_test.json && grep -q '"asset":"0x833
 grep -qi '^payment-required:' /tmp/wrap_headers.txt && echo "PASS: PAYMENT-REQUIRED header present" && pass=$((pass+1)) || { echo "FAIL: PAYMENT-REQUIRED header"; fail=$((fail+1)); }
 grep -qi '^x-payment-required:' /tmp/wrap_headers.txt && echo "PASS: X-Payment-Required header mirror present" && pass=$((pass+1)) || { echo "FAIL: X-Payment-Required mirror"; fail=$((fail+1)); }
 grep -q '"price":{"amount":"0.0005","currency":"USD"}' /tmp/wrap_test.json && echo "PASS: 402 body repeats price at top level (BlockRun pattern)" && pass=$((pass+1)) || { echo "FAIL: 402 top-level price"; fail=$((fail+1)); }
+grep -q '"error":"Payment required. weather-now costs $0.0005 USDC per call."' /tmp/wrap_test.json && echo "PASS: 402 error carries plain-English price sentence (Strale pattern)" && pass=$((pass+1)) || { echo "FAIL: 402 error price sentence"; fail=$((fail+1)); }
+grep -qi '^link:.*agent-card' /tmp/wrap_headers.txt && echo "PASS: 402 carries Link header to agent-card (Strale pattern)" && pass=$((pass+1)) || { echo "FAIL: 402 Link agent-card"; fail=$((fail+1)); }
+grep -qi '^access-control-expose-headers:.*payment-required' /tmp/wrap_headers.txt && echo "PASS: 402 exposes payment headers for CORS (Strale pattern)" && pass=$((pass+1)) || { echo "FAIL: 402 CORS expose headers"; fail=$((fail+1)); }
 $PY - <<'PYEOF'
 import re, base64, json
 hdrs = open('/tmp/wrap_headers.txt').read()

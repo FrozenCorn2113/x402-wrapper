@@ -132,7 +132,14 @@ def make_402(wrapper: dict) -> dict:
     resource_url = f"{public_base_url()}/v1/{wrapper['name']}"
     return {
         "x402Version": X402_VERSION,
-        "error": "payment required",
+        # Strale pattern (api.strale.io — the vendor with real agent revenue:
+        # two independent agent buyers, $0.02-$0.54/call): the error string
+        # carries a plain-English price sentence, so a client that reads only
+        # the error field still sees the cost with zero decoding.
+        "error": (
+            f"Payment required. {wrapper['name']} costs "
+            f"${pricing['price_usdc']} USDC per call."
+        ),
         # BlockRun pattern (blockrunai/awesome-blockrun docs/x402/how-it-works.md):
         # the JSON body repeats the price as price.amount in USD at the top
         # level, for clients that only read the body and never parse accepts[].
@@ -174,12 +181,24 @@ def payment_required_headers(wrapper: dict) -> dict:
 
     BlockRun ships the same value under X-Payment-Required too, so we mirror
     both — buyers already parsing BlockRun challenges read either form.
+    Strale additions (verified 2026-09-24 on api.strale.io's live 402): a
+    Link header pointing at our agent-card (in-band discovery on every 402),
+    and CORS exposing the payment headers so browser/WASM agents can read
+    them. Strale sends NO challenge header at all — challenge lives in the
+    body; ours is a superset (body + both header mirrors).
     """
     raw = json.dumps(make_402(wrapper), separators=(",", ":")).encode()
     import base64
 
     b64 = base64.b64encode(raw).decode()
-    return {"PAYMENT-REQUIRED": b64, "X-Payment-Required": b64}
+    return {
+        "PAYMENT-REQUIRED": b64,
+        "X-Payment-Required": b64,
+        "Link": '</.well-known/agent-card.json>; rel="agent-card"',
+        "Access-Control-Expose-Headers": (
+            "PAYMENT-REQUIRED, X-Payment-Required, X-Payment-Response"
+        ),
+    }
 
 
 def looks_like_payment_payload(proof: str) -> bool:
