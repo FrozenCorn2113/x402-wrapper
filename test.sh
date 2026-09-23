@@ -54,6 +54,15 @@ echo "--- llms.txt ---"
 check "llms.txt" 200 "$BASE/llms.txt"
 grep -q 'How to pay' /tmp/wrap_test.json && grep -q 'X-Payment' /tmp/wrap_test.json && echo "PASS: llms.txt content" && pass=$((pass+1)) || { echo "FAIL: llms.txt"; fail=$((fail+1)); }
 grep -q 'Discovery shape' /tmp/wrap_test.json && grep -q 'extensions.bazaar' /tmp/wrap_test.json && echo "PASS: llms.txt advertises bazaar discovery shape" && pass=$((pass+1)) || { echo "FAIL: llms.txt discovery shape"; fail=$((fail+1)); }
+grep -q 'skill.md' /tmp/wrap_test.json && echo "PASS: llms.txt advertises skill.md" && pass=$((pass+1)) || { echo "FAIL: llms.txt skill.md"; fail=$((fail+1)); }
+
+echo "--- skill.md + agent-card aliases ---"
+check "skill.md -> 200" 200 "$BASE/skill.md"
+grep -q 'SKILL: x402-wrapper' /tmp/wrap_test.json && grep -q 'X-Envelope' /tmp/wrap_test.json && grep -q '0.0001' /tmp/wrap_test.json && echo "PASS: skill.md content" && pass=$((pass+1)) || { echo "FAIL: skill.md content"; fail=$((fail+1)); }
+check "agent-card root alias -> 200" 200 "$BASE/agent-card.json"
+grep -q '"skill_md"' /tmp/wrap_test.json && echo "PASS: root alias card advertises skill_md" && pass=$((pass+1)) || { echo "FAIL: root alias card"; fail=$((fail+1)); }
+check "agent-card A2A alias -> 200" 200 "$BASE/.well-known/agent.json"
+grep -q '"envelope_support": *true' /tmp/wrap_test.json && echo "PASS: A2A alias card content" && pass=$((pass+1)) || { echo "FAIL: A2A alias card"; fail=$((fail+1)); }
 
 echo "--- 402 without payment (v2 envelope) ---"
 check "no proof -> 402" 402 "$BASE/v1/weather-now?latitude=43.7&longitude=-79.4&current=temperature_2m"

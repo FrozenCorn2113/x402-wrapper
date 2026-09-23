@@ -74,6 +74,8 @@ cross-comparing head hashes close the quiet-edit window.
 Machine-readable catalog: GET {base}/v1
 Strale-style catalog: GET {base}/x402/catalog
 Agent-card (one-GET discovery): GET {base}/.well-known/agent-card.json
+  (also at {base}/agent-card.json and {base}/.well-known/agent.json)
+Skill (agent usage guide): GET {base}/skill.md
 Discovery manifest: GET {base}/.well-known/x402
 Health: GET {base}/health
 Network: Base. Asset: USDC. Receipts are returned with every paid call.
@@ -413,9 +415,14 @@ def index_402_verify():
 
 
 @app.get("/.well-known/agent-card.json")
+@app.get("/agent-card.json")
+@app.get("/.well-known/agent.json")
 def agent_card():
     """Agent-card discovery document, mirroring Strale's discovery surface.
 
+    Served at three paths: /.well-known/agent-card.json (ours), /agent-card.json
+    (Strale-style root), /.well-known/agent.json (A2A convention) — all aliases
+    of the same document, so buyers that fetch any conventional path get it.
     §6o finding: buyers price-ladder vendor catalogs off agent-card.json +
     /x402/catalog. This card gives an agent everything in one GET: who we
     are, capabilities + per-call prices, payment rails, and where to verify
@@ -466,6 +473,7 @@ def agent_card():
             "x402_manifest": f"{base}/.well-known/x402",
             "catalog": f"{base}/x402/catalog",
             "llms_txt": f"{base}/llms.txt",
+            "skill_md": f"{base}/skill.md",
         },
     }
 
@@ -492,6 +500,18 @@ def x402_catalog():
 def llms_txt():
     """Plain-language service description for agent/LLM discovery."""
     return llms_text()
+
+
+@app.get("/skill.md", response_class=PlainTextResponse)
+def skill_md():
+    """Agent skill file: terse usage guide for agents wiring up x402-wrapper."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(here, "skill.md")
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return PlainTextResponse("skill.md not installed\n", status_code=404)
 
 
 def client_identity(request: Request) -> str:
