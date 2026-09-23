@@ -8,5 +8,6 @@ receipts/
 .env
 *.md
 !requirements.txt
+!skill.md
 test.sh
 .DS_Store
