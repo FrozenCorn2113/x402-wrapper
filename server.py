@@ -22,7 +22,7 @@ WRAPPERS = core.load_configs()
 
 SERVICE_DESCRIPTION = (
     "Pay-per-call API proxy for AI agents. Wraps ordinary data APIs behind the "
-    "x402 v2 payment protocol: agents pay a few cents in USDC per call on Base — "
+    "x402 v2 payment protocol: agents pay fractions of a cent in USDC per call on Base — "
     "no API keys, accounts, or subscriptions. Call an endpoint without payment "
     "to get HTTP 402 with a standard x402 v2 PaymentRequired challenge "
     "(PAYMENT-REQUIRED header), pay by direct USDC transfer, then retry with "
@@ -77,6 +77,15 @@ Agent-card (one-GET discovery): GET {base}/.well-known/agent-card.json
 Discovery manifest: GET {base}/.well-known/x402
 Health: GET {base}/health
 Network: Base. Asset: USDC. Receipts are returned with every paid call.
+
+## Discovery shape
+Our /.well-known/x402 manifest carries an `extensions.bazaar` block modeled on
+Nansen's 402-challenge discovery shape — per-endpoint URLs, methods, and per-call
+USDC prices under `info`, plus a JSON Schema contract under `schema`. If your
+buyer agent already parses Nansen-style bazaar extensions, this manifest parses
+the same way. Prices are the ground truth: weather-now $0.0005, crypto-price
+$0.001, echo $0.0001 per call; settlement is a direct USDC transfer on Base
+(eip155:8453, 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913) to {core.resolve_pay_to(next(iter(WRAPPERS.values()))) if WRAPPERS else 'payTo from GET /v1'}.
 
 ## Envelopes (prepaid budgets)
 Some agents run under a funded principal that cannot authorize per-call spend
@@ -317,8 +326,10 @@ def well_known_x402():
         "description": SERVICE_DESCRIPTION,
         "baseUrl": base,
         "catalog": f"{base}/v1",
-        "network": os.environ.get("NETWORK", "").strip() or "base",
-        "asset": "USDC",
+        # x402 v2 wants CAIP-2 chain ids ("eip155:8453"), not labels ("base").
+        "network": core.network_to_caip2(os.environ.get("NETWORK", "").strip() or "base"),
+        "asset": core.BASE_USDC_CONTRACT,
+        "assetName": "USDC",
         "payTo": catalog[0]["pay_to"] if catalog else None,
         "endpoints": [
             {
@@ -331,6 +342,64 @@ def well_known_x402():
             }
             for e in catalog
         ],
+        # Discovery shape mirroring Nansen's 402-challenge `extensions.bazaar`
+        # block: buyers already price-ladder Nansen-style catalogs off this
+        # shape (per-endpoint info + JSON Schema contract). Additive only —
+        # every key above stays exactly as before.
+        "extensions": {
+            "bazaar": {
+                "info": {
+                    "pricing": {
+                        "unit": "USDC per call on Base (eip155:8453)",
+                        "per_call_prices": {e["name"]: e["price_usdc"] for e in catalog},
+                    },
+                    "endpoints": {
+                        e["name"]: {
+                            "url": e["endpoint"],
+                            "method": e["method"],
+                            "price_usdc": e["price_usdc"],
+                            "description": e["description"],
+                        }
+                        for e in catalog
+                    },
+                },
+                "schema": {
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "type": "object",
+                    "properties": {
+                        "info": {
+                            "type": "object",
+                            "properties": {
+                                "pricing": {
+                                    "type": "object",
+                                    "properties": {
+                                        "unit": {"type": "string"},
+                                        "per_call_prices": {
+                                            "type": "object",
+                                            "additionalProperties": {"type": "string"},
+                                        },
+                                    },
+                                },
+                                "endpoints": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                        "type": "object",
+                                        "properties": {
+                                            "url": {"type": "string"},
+                                            "method": {"type": "string", "const": "GET"},
+                                            "price_usdc": {"type": "string"},
+                                            "description": {"type": "string"},
+                                        },
+                                        "required": ["url", "method", "price_usdc"],
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    "required": ["info"],
+                },
+            }
+        },
     }
 
 

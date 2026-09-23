@@ -34,10 +34,26 @@ grep -q weather-now /tmp/wrap_test.json && grep -q crypto-price /tmp/wrap_test.j
 echo "--- discovery manifest ---"
 check "well-known x402" 200 "$BASE/.well-known/x402"
 grep -q '"x402Version"' /tmp/wrap_test.json && grep -q 'weather-now' /tmp/wrap_test.json && grep -q 'payTo' /tmp/wrap_test.json && echo "PASS: discovery manifest content" && pass=$((pass+1)) || { echo "FAIL: discovery manifest"; fail=$((fail+1)); }
+grep -q '"extensions"' /tmp/wrap_test.json && grep -q '"bazaar"' /tmp/wrap_test.json && echo "PASS: manifest has extensions.bazaar block" && pass=$((pass+1)) || { echo "FAIL: extensions.bazaar"; fail=$((fail+1)); }
+grep -q '"network":"eip155:8453"' /tmp/wrap_test.json && grep -q '"asset":"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"' /tmp/wrap_test.json && echo "PASS: manifest network CAIP-2 + asset contract" && pass=$((pass+1)) || { echo "FAIL: manifest network/asset"; fail=$((fail+1)); }
+grep -q 'fractions of a cent' /tmp/wrap_test.json && echo "PASS: price copy truthful (fractions of a cent)" && pass=$((pass+1)) || { echo "FAIL: price copy"; fail=$((fail+1)); }
+$PY - <<'PYEOF'
+import json
+d = json.load(open('/tmp/wrap_test.json'))
+bz = d['extensions']['bazaar']
+ep = bz['info']['endpoints']
+assert set(ep) == {'weather-now', 'crypto-price', 'echo'}, ep.keys()
+assert bz['info']['pricing']['per_call_prices']['crypto-price'] == '0.001'
+props = bz['schema']['properties']['info']['properties']
+assert 'pricing' in props and 'endpoints' in props, 'schema incomplete'
+print('PASS: bazaar endpoints + pricing + schema verify')
+PYEOF
+[ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: bazaar structure"; fail=$((fail+1)); }
 
 echo "--- llms.txt ---"
 check "llms.txt" 200 "$BASE/llms.txt"
 grep -q 'How to pay' /tmp/wrap_test.json && grep -q 'X-Payment' /tmp/wrap_test.json && echo "PASS: llms.txt content" && pass=$((pass+1)) || { echo "FAIL: llms.txt"; fail=$((fail+1)); }
+grep -q 'Discovery shape' /tmp/wrap_test.json && grep -q 'extensions.bazaar' /tmp/wrap_test.json && echo "PASS: llms.txt advertises bazaar discovery shape" && pass=$((pass+1)) || { echo "FAIL: llms.txt discovery shape"; fail=$((fail+1)); }
 
 echo "--- 402 without payment (v2 envelope) ---"
 check "no proof -> 402" 402 "$BASE/v1/weather-now?latitude=43.7&longitude=-79.4&current=temperature_2m"
