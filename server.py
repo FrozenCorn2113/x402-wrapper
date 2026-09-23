@@ -3,6 +3,7 @@ when MOCK_PAYMENTS=false and a real PAY_TO_ADDRESS is configured."""
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import time
@@ -14,6 +15,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 import circuit_breaker
 import challenge_log
 import core
+import envelopes
 
 app = FastAPI(title="x402 Middleman Wrapper")
 WRAPPERS = core.load_configs()
@@ -70,6 +72,32 @@ Machine-readable catalog: GET {base}/v1
 Discovery manifest: GET {base}/.well-known/x402
 Health: GET {base}/health
 Network: Base. Asset: USDC. Receipts are returned with every paid call.
+
+## Envelopes (prepaid budgets)
+Some agents run under a funded principal that cannot authorize per-call spend
+(jarviscooper's trust doctrine: the mandate must be signed by the PRINCIPAL,
+invalidation must be enforced where the money is, ambiguity resolves to NO
+purchase). Envelopes are the answer: a prepaid, policy-bounded budget the
+agent draws down without touching the principal's wallet per call.
+1. The principal sends USDC on Base to {core.resolve_pay_to(next(iter(WRAPPERS.values()))) if WRAPPERS else 'payTo from GET /v1'}.
+2. The operator verifies the transfer read-only on-chain, then opens or tops up
+   an envelope for the principal's wallet (operator-only admin API).
+3. The agent calls /v1/{{wrapper}} with header `X-Envelope: <envelope id>`, and
+   `X-Reason: <why you are making this call>` when the principal's policy
+   requires it.
+Policy enforced before every call: envelope active, balance covers the price,
+price within the per-call cap, endpoint in the allowed list, per-envelope
+velocity cap (per minute). Envelope calls SKIP the 402 x402 flow entirely —
+no X-Payment needed. Any ambiguity (unknown/suspended/closed envelope, cap
+exceeded, short balance, velocity tripped, missing or malformed reason)
+refuses with HTTP 402 code ENVELOPE_DECLINED: nothing is decremented,
+charged, or forwarded. Statement and per-envelope receipts: GET
+{base}/v1/envelopes/{{id}} (public).
+
+HONESTY NOTE: v1 envelopes are OPERATOR-ISSUED mandates recorded only after
+verified on-chain top-ups (principal -> business wallet, read-only
+verification by the operator). Principal-signed mandates (EIP-712) are v2,
+not yet built. We do not hold customer keys and cannot move customer funds.
 """
 
 
@@ -87,7 +115,11 @@ def health():
 @app.get("/v1")
 def list_wrappers():
     """Machine-readable catalog: what agents can buy and for how much."""
-    return {"wrappers": core.catalog(), "loop_protection": circuit_breaker.describe()}
+    return {
+        "wrappers": core.catalog(),
+        "loop_protection": circuit_breaker.describe(),
+        "envelope_support": True,
+    }
 
 
 @app.get("/v1/freshness")
@@ -132,6 +164,116 @@ async def post_challenge_log(request: Request):
     if err:
         return JSONResponse({"error": err}, status_code=422)
     return JSONResponse(entry, status_code=201)
+
+
+def admin_authorized(authorization: str | None) -> bool:
+    """Bearer check against the ADMIN_TOKEN env var. No token configured or
+    a bad token -> False. Timing-safe compare."""
+    configured = os.environ.get("ADMIN_TOKEN", "").strip()
+    if not configured or not authorization:
+        return False
+    scheme, _, value = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not value:
+        return False
+    return hmac.compare_digest(value.strip(), configured)
+
+
+def _require_admin(authorization: str | None):
+    if not admin_authorized(authorization):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    return None
+
+
+@app.post("/v1/admin/envelopes", status_code=201)
+async def admin_open_envelope(
+    request: Request, authorization: str | None = Header(default=None)
+):
+    """Open a prepaid envelope. Operator-only: the operator calls this ONLY
+    after read-only on-chain verification that the principal sent USDC to
+    the business wallet. Body: {principal_wallet, label, usd_amount,
+    per_call_cap, allowed_paths, velocity_per_min, reason_required}."""
+    denied = _require_admin(authorization)
+    if denied:
+        return denied
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "body must be valid JSON"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "body must be a JSON object"}, status_code=400)
+    record, err = envelopes.open_envelope(
+        principal_wallet=body.get("principal_wallet"),
+        label=body.get("label"),
+        usd_amount=body.get("usd_amount"),
+        per_call_cap=body.get("per_call_cap"),
+        allowed_paths=body.get("allowed_paths"),
+        velocity_per_min=body.get("velocity_per_min"),
+        reason_required=body.get("reason_required"),
+        valid_wrappers=set(WRAPPERS),
+    )
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    return JSONResponse({"envelope": record}, status_code=201)
+
+
+@app.post("/v1/admin/envelopes/{envelope_id}/topup")
+async def admin_topup_envelope(
+    envelope_id: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+):
+    """Record credit after MANUAL read-only on-chain verification of the
+    principal's USDC transfer. The server does no verification itself.
+    Body: {usd_amount, tx_hash?} — the tx hash is recorded for audit."""
+    denied = _require_admin(authorization)
+    if denied:
+        return denied
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "body must be valid JSON"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "body must be a JSON object"}, status_code=400)
+    record, err = envelopes.topup_envelope(
+        envelope_id, body.get("usd_amount"), body.get("tx_hash")
+    )
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    return JSONResponse({"envelope": record})
+
+
+@app.post("/v1/admin/envelopes/{envelope_id}/status")
+async def admin_envelope_status(
+    envelope_id: str,
+    request: Request,
+    authorization: str | None = Header(default=None),
+):
+    """Suspend or close an envelope. Body: {status} in [active, suspended, closed]."""
+    denied = _require_admin(authorization)
+    if denied:
+        return denied
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "body must be valid JSON"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "body must be a JSON object"}, status_code=400)
+    record, err = envelopes.set_envelope_status(envelope_id, body.get("status"))
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+    return JSONResponse({"envelope": record})
+
+
+@app.get("/v1/envelopes/{envelope_id}")
+def envelope_statement(envelope_id: str):
+    """Public statement for one envelope: status, balance, policy summary,
+    and that envelope's receipt lines. Never exposes other envelopes' data."""
+    stmt = envelopes.statement(envelope_id)
+    if stmt is None:
+        return JSONResponse(
+            {"error": f"unknown envelope id '{envelope_id}'"}, status_code=404
+        )
+    return stmt
 
 
 @app.get("/v1/loop-protection")
@@ -211,6 +353,8 @@ async def proxy(
     x_payment: str | None = Header(default=None),
     payment_signature: str | None = Header(default=None),
     x_payment_proof: str | None = Header(default=None),  # legacy alias
+    x_envelope: str | None = Header(default=None),
+    x_reason: str | None = Header(default=None),
 ):
     wrapper = WRAPPERS.get(name)
     if not wrapper:
@@ -237,6 +381,41 @@ async def proxy(
         )
 
     proof = x_payment or payment_signature or x_payment_proof
+
+    # Envelope drawdown: a prepaid principal budget. Policy is checked BEFORE
+    # any payment flow; passing calls SKIP the 402 x402 flow entirely. Any
+    # ambiguity (unknown/suspended envelope, cap exceeded, short balance,
+    # velocity tripped, missing/malformed reason) refuses with 402
+    # ENVELOPE_DECLINED — never decremented, charged, or forwarded.
+    if x_envelope:
+        price_atomic = int(core.price_to_atomic(wrapper["pricing"]["price_usdc"]))
+        pending, env_err = envelopes.try_spend(
+            x_envelope, name, price_atomic, x_reason
+        )
+        if env_err:
+            return JSONResponse(
+                {
+                    "code": env_err["code"],
+                    "error": env_err["error"],
+                    "envelope_id": str(x_envelope or "").strip(),
+                },
+                status_code=env_err["status"],
+            )
+        if not core.check_rate_limit(wrapper):
+            return JSONResponse({"error": "rate limit exceeded"}, status_code=429)
+        params = dict(request.query_params)
+        if request.method == "POST":
+            try:
+                body = await request.json()
+                if isinstance(body, dict):
+                    params.update({k: str(v) for k, v in body.items()})
+            except Exception:
+                pass
+        started = time.time()
+        status, data = core.forward(wrapper, params)
+        latency_ms = int((time.time() - started) * 1000)
+        receipt = envelopes.finalize_spend(pending, status, latency_ms)
+        return JSONResponse({"data": data, "receipt": receipt}, status_code=status)
 
     # A base64 x402 PaymentPayload (EIP-3009 authorization) can't be settled by
     # us directly — tell the agent how to pay instead of silently rejecting.
