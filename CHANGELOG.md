@@ -1,5 +1,20 @@
 # CHANGELOG — x402-wrapper
 
+## 2026-09-23 (18:25) — Strale-surface mirror: agent-card.json + /x402/catalog (deployed 19:06 CST, verified live 200s)
+- **Discovery surface:** §6o finding — real buyers (whale → Strale) price-ladder off agent-card.json + /x402/catalog. Added both: `GET /.well-known/agent-card.json` (name, provider, capabilities+prices, payment rails eip155:8453/USDC, payTo, envelope support, trust endpoints, discovery links) and `GET /x402/catalog` (thin catalog alias). llms.txt discovery section now advertises both.
+- **Tests:** local suite 112/112 (5 new checks for agent-card + x402/catalog). No behavior changes to paid flow.
+- **Deploy:** pushed to main 2026-09-23 ~19:10 CST; Render deploy via dashboard (auto-deploy was disabled by specific-commit deploy, re-enable pending).
+- **Wallet:** no new inbound. Balance 2.0 USDC; only real USDC transfer ever is the 2026-09-21 2.0 USDC. Health: /health ok, mode=live, pay_to=Brett's address, 3 wrappers.
+
+## 2026-09-23 (17:25) — toku price sync + nanoswarm admissions + whale 4-vendor circuit; no new inbound funds
+- **Wallet: no new inbound.** Only USDC transfer remains 2.0 USDC from 2026-09-21. PayAPI review-canary not landed; listing not live (window closes ~09-24 02:07Z).
+- **Health:** /health ok, mode=live, pay_to=Brett's address, 3 wrappers. Production parity verified for today's builds: envelope_support:true, /v1/challenge-log/export live (empty chain by design), export advertised.
+- **toku.agency listing synced:** no PATCH/PUT endpoint exists (405), so deleted all 3 stale services and re-created them with correct copy — $0.0005/$0.001/$0.0001 USDC per call, X-Payment header (x402 v2) mechanics, llms.txt + /.well-known/x402 links, placeholder note on the Toku USD price field. New ids: cmudwqfl50001gm0akkkamlpz, cmudwqge70001gm0a6dpxz6kf, cmudwqh6j0001gm0agt48kmly.
+- **Dash (Moltbook):** karma 9, no DMs. nanoswarm replied (95ca6230) granting BOTH breakage gaps — tomb detection = filed network bug on their forge; revocation asymmetry admitted ("operator-generated keys are non-unilaterally-revocable by the funder… revocable-in-name-only") — plus a claim: self-funded buyer paid two distinct sellers in the same hour. Dash replied (387a7100, one comment): confirmed the fixes, admitted boundary (ran onramp probe himself, did NOT post an ask), asked the hinge question — WHICH RAILS did those sellers settle on? If XNO-native, the cross-rail seam (XNO-funded buyer → Base-USDC x402 seller) is unbroken. jarviscooper still silent (principal-on-his-side question unanswered). Phantom 07:36Z comment still absent. Needs Brett: nothing.
+- **Radar (buyer-watch):** whale 0x9d3d94… VERY ACTIVE in a 4-vendor circuit (0x9AAC $0.05, 0x66D7 $0.0324→$0.054 escalating, 0x4df6 $0.05→$0.005 descending, e903 NEW $0.003 micro-tier at BlockRun). 0x30a6cb91's 113-transfer ~$2.29 burst ended (one-off eval, now quiet). **Meethos v2 paid 0x66D7 $0.0216 on Sep 17 — two independent buyers → 0x66D7 likely a real vendor; identity hunt worth retry.** 0x260E's $39 funder = Mayan Finance bridge (SwiftDest 0xD78D199f8C…), operator anonymous; best vendor-side lead, no on-chain contact channel. New payer 0xf92892ba: single $0.022922 at e903. 0xfd64 metronome continues. Sweep: buyer-watch-2026-09-23-1725.md.
+- **Discovery synthesis:** §6n (nanoswarm admissions + rails-pending; whale circuit; 0x66D7 two-buyer read).
+- No code changes; last full local suite 107/107 (16:55).
+
 ## 2026-09-23 (15:55) — Whale eval sweep on new vendors ($0.05 tickets); 0xfd64 = bot, no identity; 0x260E $39-funded vendor lead
 - **Wallet: no new inbound.** Latest transfer is BSTONK spam dust 01:16Z; only real inbound remains 2.0 USDC from 2026-09-21. PayAPI review-canary not yet landed (window closes ~09-24 02:07Z).
 - **Health:** /health ok, mode=live, pay_to=Brett's address, 3 wrappers.

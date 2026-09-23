@@ -72,6 +72,8 @@ document digest — one holder detects post-pull edits, two holders
 cross-comparing head hashes close the quiet-edit window.
 
 Machine-readable catalog: GET {base}/v1
+Strale-style catalog: GET {base}/x402/catalog
+Agent-card (one-GET discovery): GET {base}/.well-known/agent-card.json
 Discovery manifest: GET {base}/.well-known/x402
 Health: GET {base}/health
 Network: Base. Asset: USDC. Receipts are returned with every paid call.
@@ -339,6 +341,82 @@ def index_402_verify():
     if not h:
         return PlainTextResponse("unverified\n", status_code=404)
     return h + "\n"
+
+
+@app.get("/.well-known/agent-card.json")
+def agent_card():
+    """Agent-card discovery document, mirroring Strale's discovery surface.
+
+    §6o finding: buyers price-ladder vendor catalogs off agent-card.json +
+    /x402/catalog. This card gives an agent everything in one GET: who we
+    are, capabilities + per-call prices, payment rails, and where to verify
+    trust claims without trusting operator copy.
+    """
+    base = core.public_base_url()
+    catalog = core.catalog()
+    pay_to = catalog[0]["pay_to"] if catalog else None
+    return {
+        "name": "x402-wrapper",
+        "description": SERVICE_DESCRIPTION,
+        "url": base,
+        "provider": {
+            "organization": "x402-wrapper",
+            "agent_card": f"{base}/.well-known/agent-card.json",
+            "listings": ["https://toku.agency/agents/x402-wrapper"],
+        },
+        "version": "1.0.0",
+        "protocol": "x402 v2",
+        "payment": {
+            "network": "eip155:8453",
+            "network_name": "base",
+            "asset": "USDC",
+            "asset_address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+            "pay_to": pay_to,
+            "settlement": "direct USDC transfer; retry with header X-Payment: <base-tx-hash>",
+        },
+        "capabilities": [
+            {
+                "name": e["name"],
+                "endpoint": f"/v1/{e['name']}",
+                "url": e["endpoint"],
+                "description": e["description"],
+                "method": e["method"],
+                "params": e["params"],
+                "price_usdc": e["price_usdc"],
+            }
+            for e in catalog
+        ],
+        "envelope_support": True,
+        "envelope_statement": f"{base}/v1/envelopes/{{id}}",
+        "trust": {
+            "loop_protection": f"{base}/v1/loop-protection",
+            "challenge_log": f"{base}/v1/challenge-log",
+            "freshness_beacon": f"{base}/v1/freshness",
+        },
+        "discovery": {
+            "x402_manifest": f"{base}/.well-known/x402",
+            "catalog": f"{base}/x402/catalog",
+            "llms_txt": f"{base}/llms.txt",
+        },
+    }
+
+
+@app.get("/x402/catalog")
+def x402_catalog():
+    """Strale-style catalog path: the full buyable catalog under /x402/catalog."""
+    base = core.public_base_url()
+    return {
+        "x402Version": core.X402_VERSION,
+        "name": "x402-wrapper",
+        "catalog": f"{base}/x402/catalog",
+        "baseUrl": base,
+        "payment": {
+            "network": "eip155:8453",
+            "asset": "USDC",
+            "pay_to": (core.catalog() or [{}])[0].get("pay_to"),
+        },
+        "endpoints": core.catalog(),
+    }
 
 
 @app.get("/llms.txt", response_class=PlainTextResponse)

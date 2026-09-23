@@ -106,6 +106,13 @@ check "loop-protection report -> 200" 200 "$BASE/v1/loop-protection"
 grep -q '"loops_tripped":[ ]\?[1-9]' /tmp/wrap_test.json && grep -q '"loop_blocked_calls":[ ]\?[1-9]' /tmp/wrap_test.json && echo "PASS: report counters reflect the tripped loop" && pass=$((pass+1)) || { echo "FAIL: report counters"; fail=$((fail+1)); }
 grep -q '"honesty"' /tmp/wrap_test.json && grep -q '"identical_threshold"' /tmp/wrap_test.json && echo "PASS: report honesty + policy fields" && pass=$((pass+1)) || { echo "FAIL: report honesty/policy"; fail=$((fail+1)); }
 
+echo "--- agent-card + x402/catalog discovery (Strale surface mirror) ---"
+check "agent-card.json -> 200" 200 "$BASE/.well-known/agent-card.json"
+grep -q '"protocol": *"x402 v2"' /tmp/wrap_test.json && grep -q '"envelope_support": *true' /tmp/wrap_test.json && grep -q 'eip155:8453' /tmp/wrap_test.json && echo "PASS: agent-card content (protocol, envelopes, CAIP-2)" && pass=$((pass+1)) || { echo "FAIL: agent-card content"; fail=$((fail+1)); }
+grep -q 'weather-now' /tmp/wrap_test.json && grep -q 'crypto-price' /tmp/wrap_test.json && grep -q 'echo' /tmp/wrap_test.json && echo "PASS: agent-card lists all 3 capabilities" && pass=$((pass+1)) || { echo "FAIL: agent-card capabilities"; fail=$((fail+1)); }
+check "x402/catalog -> 200" 200 "$BASE/x402/catalog"
+grep -q '"endpoints"' /tmp/wrap_test.json && grep -q 'weather-now' /tmp/wrap_test.json && grep -q '"x402Version"' /tmp/wrap_test.json && echo "PASS: x402/catalog content" && pass=$((pass+1)) || { echo "FAIL: x402/catalog content"; fail=$((fail+1)); }
+
 echo "--- freshness beacon + challenge log ---"
 check "freshness beacon -> 200" 200 "$BASE/v1/freshness"
 grep -q 'last_independently_challenged_at' /tmp/wrap_test.json && grep -q 'challenged_by' /tmp/wrap_test.json && grep -q '"staleness_seconds":null' /tmp/wrap_test.json && echo "PASS: empty beacon shape (no challenges yet)" && pass=$((pass+1)) || { echo "FAIL: empty beacon shape"; fail=$((fail+1)); }

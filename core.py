@@ -147,6 +147,9 @@ def make_402(wrapper: dict) -> dict:
                 "payTo": resolve_pay_to(wrapper),
                 "maxTimeoutSeconds": 300,
                 "extra": {
+                    # "USD Coin" is the ERC-20 contract name for USDC on Base;
+                    # PayAPI Market (and any strict x402 directory checker)
+                    # requires this exact value on Base.
                     "name": "USD Coin",
                     "decimals": USDC_DECIMALS,
                     "settlement": "direct-transfer",
