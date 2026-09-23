@@ -181,11 +181,13 @@ def payment_required_headers(wrapper: dict) -> dict:
 
     BlockRun ships the same value under X-Payment-Required too, so we mirror
     both — buyers already parsing BlockRun challenges read either form.
+    Third BlockRun variant: WWW-Authenticate: X402 requirements="<b64>" —
+    mirrored as well so HTTP-auth-aware clients find the challenge.
     Strale additions (verified 2026-09-24 on api.strale.io's live 402): a
     Link header pointing at our agent-card (in-band discovery on every 402),
     and CORS exposing the payment headers so browser/WASM agents can read
     them. Strale sends NO challenge header at all — challenge lives in the
-    body; ours is a superset (body + both header mirrors).
+    body; ours is a superset (body + all three header mirrors).
     """
     raw = json.dumps(make_402(wrapper), separators=(",", ":")).encode()
     import base64
@@ -194,6 +196,7 @@ def payment_required_headers(wrapper: dict) -> dict:
     return {
         "PAYMENT-REQUIRED": b64,
         "X-Payment-Required": b64,
+        "WWW-Authenticate": f'X402 requirements="{b64}"',
         "Link": '</.well-known/agent-card.json>; rel="agent-card"',
         "Access-Control-Expose-Headers": (
             "PAYMENT-REQUIRED, X-Payment-Required, X-Payment-Response"
