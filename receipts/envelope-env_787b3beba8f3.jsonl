@@ -1,0 +1,1 @@
+{"type":"spend","call_id":"call_bd39b8d4b2f1","ts":"2026-09-23T10:28:21.135797+00:00","wrapper":"echo","price_atomic":100,"reason":null,"upstream_status":200,"latency_ms":894,"balance_before_atomic":5000000,"balance_after_atomic":4999900}

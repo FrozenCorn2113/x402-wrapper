@@ -1,0 +1,94 @@
+{
+  "env_787b3beba8f3": {
+    "allowed_paths": [
+      "weather-now",
+      "crypto-price",
+      "echo"
+    ],
+    "balance_atomic": 4999900,
+    "created_at": "2026-09-23T10:28:21.095302+00:00",
+    "id": "env_787b3beba8f3",
+    "label": "jarviscooper trial",
+    "last_topup_at": "2026-09-23T10:28:21.095324+00:00",
+    "last_topup_tx": null,
+    "per_call_cap_atomic": 1000,
+    "principal_wallet": "0x1234567890abcdef1234567890abcdef12345678",
+    "reason_required": false,
+    "status": "active",
+    "total_topped_up_atomic": 5000000,
+    "updated_at": "2026-09-23T10:28:21.135776+00:00",
+    "velocity_per_min": 60
+  },
+  "env_8f549154b5c1": {
+    "allowed_paths": [
+      "echo"
+    ],
+    "balance_atomic": 1000000,
+    "created_at": "2026-09-23T10:28:22.090334+00:00",
+    "id": "env_8f549154b5c1",
+    "label": "cap test",
+    "last_topup_at": "2026-09-23T10:28:22.090354+00:00",
+    "last_topup_tx": null,
+    "per_call_cap_atomic": 50,
+    "principal_wallet": "0x1234567890abcdef1234567890abcdef12345678",
+    "reason_required": false,
+    "status": "active",
+    "total_topped_up_atomic": 1000000,
+    "updated_at": "2026-09-23T10:28:22.090350+00:00",
+    "velocity_per_min": 60
+  },
+  "env_ad0f0f9165e9": {
+    "allowed_paths": [
+      "echo"
+    ],
+    "balance_atomic": 999900,
+    "created_at": "2026-09-23T10:28:22.146448+00:00",
+    "id": "env_ad0f0f9165e9",
+    "label": "reason test",
+    "last_topup_at": "2026-09-23T10:28:22.146483+00:00",
+    "last_topup_tx": null,
+    "per_call_cap_atomic": 1000,
+    "principal_wallet": "0x1234567890abcdef1234567890abcdef12345678",
+    "reason_required": true,
+    "status": "active",
+    "total_topped_up_atomic": 1000000,
+    "updated_at": "2026-09-23T10:28:22.196792+00:00",
+    "velocity_per_min": 60
+  },
+  "env_c5cd72fbe6c7": {
+    "allowed_paths": [
+      "echo"
+    ],
+    "balance_atomic": 999800,
+    "created_at": "2026-09-23T10:28:23.541117+00:00",
+    "id": "env_c5cd72fbe6c7",
+    "label": "velocity test",
+    "last_topup_at": "2026-09-23T10:28:23.541138+00:00",
+    "last_topup_tx": null,
+    "per_call_cap_atomic": 1000,
+    "principal_wallet": "0x1234567890abcdef1234567890abcdef12345678",
+    "reason_required": false,
+    "status": "active",
+    "total_topped_up_atomic": 1000000,
+    "updated_at": "2026-09-23T10:28:24.423473+00:00",
+    "velocity_per_min": 2
+  },
+  "env_e624fae89157": {
+    "allowed_paths": [
+      "echo"
+    ],
+    "balance_atomic": 900,
+    "created_at": "2026-09-23T10:28:25.089938+00:00",
+    "id": "env_e624fae89157",
+    "label": "dust test",
+    "last_topup_at": "2026-09-23T10:28:25.716752+00:00",
+    "last_topup_tx": "0xmanualverification",
+    "per_call_cap_atomic": 1000,
+    "principal_wallet": "0x1234567890abcdef1234567890abcdef12345678",
+    "reason_required": false,
+    "status": "suspended",
+    "total_topped_up_atomic": 1100,
+    "updated_at": "2026-09-23T10:28:26.195967+00:00",
+    "velocity_per_min": 60
+  }
+}

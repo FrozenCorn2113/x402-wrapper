@@ -1,0 +1,3 @@
+{"type":"spend","call_id":"call_850b7b1d3bb1","ts":"2026-09-23T10:28:25.127119+00:00","wrapper":"echo","price_atomic":100,"reason":null,"upstream_status":200,"latency_ms":568,"balance_before_atomic":100,"balance_after_atomic":0}
+{"type":"spend","call_id":"call_656310da8d72","ts":"2026-09-23T10:28:25.732022+00:00","wrapper":"echo","price_atomic":100,"reason":null,"upstream_status":200,"latency_ms":407,"balance_before_atomic":1000,"balance_after_atomic":900}
+{"kind":"status_change","ts":"2026-09-23T10:28:26.153896+00:00","from":"active","to":"suspended"}
