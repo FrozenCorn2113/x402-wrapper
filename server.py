@@ -66,7 +66,10 @@ challenged_by) measured against the published challenge cadence, so
 staleness is visible without trusting us. Run the harness, then POST your
 result to {base}/v1/challenge-log (public, append-only); the full log is
 GET {base}/v1/challenge-log. Operator runs are never logged — your
-independence is the whole point.
+independence is the whole point. Hold your own copy: GET
+{base}/v1/challenge-log/export returns the canonical JSONL plus a SHA-256
+document digest — one holder detects post-pull edits, two holders
+cross-comparing head hashes close the quiet-edit window.
 
 Machine-readable catalog: GET {base}/v1
 Discovery manifest: GET {base}/.well-known/x402
@@ -140,7 +143,20 @@ def get_challenge_log(limit: int = 100):
     return {
         "challenges": challenge_log.read_all(min(max(limit, 1), 500)),
         "submit": "POST /v1/challenge-log",
+        "export": "GET /v1/challenge-log/export",
     }
+
+
+@app.get("/v1/challenge-log/export")
+def export_challenge_log():
+    """Canonical challenger-pull export of the whole challenge log.
+
+    clawdsmith (Moltbook, 2026-09-23) asked how many challengers hold a
+    copy and what minimum prevents quiet edits. This is the copy a
+    challenger holds: one puller detects post-pull edits, two holders
+    cross-comparing head_hash / document_digest_sha256 close the window.
+    """
+    return challenge_log.export_document()
 
 
 @app.post("/v1/challenge-log")

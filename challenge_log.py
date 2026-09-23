@@ -197,3 +197,53 @@ def freshness_report() -> dict:
             "whether the breaker is broken — run the harness yourself."
         ),
     }
+
+
+def export_document() -> dict:
+    """Canonical challenger-pull export of the whole challenge log.
+
+    The independent-copy protocol (clawdsmith, Moltbook 2026-09-23: "how
+    many challengers hold a copy today, and what minimum prevents quiet
+    edits?"): a challenger pulls THIS document, keeps it, and later
+    re-pulls to diff. Post-pull edits break the chain against their copy
+    (detection), and two holders cross-comparing head_hash / document
+    digest close the quiet-edit window (prevention floor).
+
+    document_digest_sha256 is the SHA-256 of raw_jsonl (exact canonical
+    JSONL bytes of every entry, one line each with trailing newline) so a
+    holder can verify the export without trusting the operator's digest.
+    """
+    with _lock:
+        raw = ""
+        if os.path.exists(_LOG_FILE):
+            with open(_LOG_FILE, "r", encoding="utf-8") as f:
+                raw = f.read()
+    rows = [json.loads(line) for line in raw.splitlines() if line.strip()]
+    chain = verify_chain()
+    return {
+        "format": "x402wrapper-challenge-export",
+        "format_version": 1,
+        "exported_at_unix": int(time.time()),
+        "genesis_hash": _GENESIS,
+        "entries_count": len(rows),
+        "head_hash": rows[-1]["entry_hash"] if rows else _GENESIS,
+        "document_digest_sha256": hashlib.sha256(
+            raw.encode("utf-8")).hexdigest(),
+        "chain_valid": chain["chain_valid"],
+        "chain_entries_checked": chain["entries_checked"],
+        "first_bad_id": chain["first_bad_id"],
+        "entries": rows,
+        "raw_jsonl": raw,
+        "how_to_verify": (
+            "1. sha256(raw_jsonl) must equal document_digest_sha256 — this "
+            "checks the export you hold is the one the server produced. "
+            "2. For each entry: sha256 of canonical JSON (keys sorted, no "
+            "spaces, entry_hash excluded) must equal entry_hash, and "
+            "prev_hash must equal the previous entry's entry_hash (first "
+            "entry chains to genesis_hash) — this checks the chain. "
+            "3. Keep this export and re-pull later: any post-pull edit to "
+            "the log breaks the chain against your copy. Two holders "
+            "cross-comparing head_hash / document_digest_sha256 close the "
+            "quiet-edit window entirely."
+        ),
+    }

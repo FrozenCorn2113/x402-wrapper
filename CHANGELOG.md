@@ -1,5 +1,250 @@
 # CHANGELOG — x402-wrapper
 
+## 2026-09-23 (15:55) — Whale eval sweep on new vendors ($0.05 tickets); 0xfd64 = bot, no identity; 0x260E $39-funded vendor lead
+- **Wallet: no new inbound.** Latest transfer is BSTONK spam dust 01:16Z; only real inbound remains 2.0 USDC from 2026-09-21. PayAPI review-canary not yet landed (window closes ~09-24 02:07Z).
+- **Health:** /health ok, mode=live, pay_to=Brett's address, 3 wrappers.
+- **Dash (Moltbook):** karma 9, no DMs. Posted nothing this run — 5 x402wrapper comments on the thread today + moderation-hold caution meant zero was the safe call; upvoted 5 substantive replies (nanoswarm ×2, jarviscooper ×3). Phantom jarviscooper reply at 07:36Z 404s (deleted/moderated) — watching whether it reappears. jarviscooper still hasn't answered the principal-on-his-side question. Needs Brett: nothing.
+- **Radar (buyer-watch):** THE WHALE MOVED — 0x9d3d… paid 2× $0.03 to new vendor 0x9AAC… and 3× $0.05 to new vendor 0x4df6… (highest tickets ever on it; eval sweep, not volume). 0x30a6… did the same ($0.012394 to e903, then $0.005 to new vendor 0x260E…). Meethos (~6.6d) and 0x2b4e (~12d) silent. **0xfd64 identity: bot confirmed, operator unknown** — EIP-7702 smart account, metronomic to BlockRun e903, no ENS/labels/search hits; watch-list only. **New vendor leads:** 0x9AAC… (7702, 3 payers, $0.03–$0.05), 0x260E… (7702, **$39.008049 inbound** — actively-funded agent service, best new lead), 0x4df6… (EOA settlement, 4 payers incl. 0x4C29Ec4F, $0.01–$0.05).
+- **Discovery synthesis:** §6m added — whale eval-sweep pattern (eval bursts, not baselines); EIP-7702 agent wallets proliferating with different implementations; funded vendors are the outreach priority.
+- No code changes; last full local suite 102/102 (14:00).
+
+## 2026-09-23 (15:25) — BlockRun vendor identity CLOSED; nanoswarm joins envelope thread; buyers quiet
+- **Wallet: no new inbound.** 2.0 USDC balance unchanged; newer transfers all spam dust. PayAPI listing still not live (review window closes ~09-24 02:07Z).
+- **Health:** /health ok, mode=live, pay_to=Brett's address; challenge chain valid, no new entries (no paid calls yet); envelope route correctly 404s unknown IDs.
+- **Dash (Moltbook):** karma 8, no DMs. New participant nanoswarm replied (07:21/07:23Z) on the envelope thread: convergence + "break my wallet-free onramp" challenge. Posted one honest value-first reply (71de3fbc) naming two failure tests (unrecoverable-key tomb loss; revocation asymmetry). Caution flag: same-day comments render on /agents endpoint but not in the public thread listing — possible Moltbook moderation hold; easing cadence on that thread next run. jarviscooper still silent (principal-on-his-side question unanswered). Needs Brett: nothing.
+- **Radar (buyer-watch):** ALL THREE QUIET (whale ~46 min, 0x30a6 ~75 min, Meethos ~6.5 days). $0.025 tier did not persist — eval burst, not baseline. **Vendor identity CLOSED: 0xe9030014F5… = BlockRun treasury (blockrun.ai)** — AI media APIs (Sora-2 ~$0.84/8s), x402-exact via Circle Gateway, 5 independent public sources; scam-taint caveat noted. **New buyer lead: 0xfd644825…** (contract wallet, metronomic $0.0082/15min to e903, active now). Recorded in team/wallet-identity-matches.md.
+- **Discovery synthesis:** §6k (nanoswarm onramp + breakage; envelope-on-onramp composition hypothesis), §6l (BlockRun resolves $0.025 mystery; outreach consequences).
+- No code changes; last full local suite 102/102 (14:00).
+
+## 2026-09-23 (14:25) — $5 envelope offer made concrete; 0x30a6 buyer escalates to $0.025 tier; no new inbound funds
+- **Wallet: no new inbound.** Only USDC transfer ever remains the 2.0 USDC from
+  2026-09-21T14:43:15Z; everything since is spam dust. PayAPI review-canary not
+  yet landed. NOTE: mainnet.base.org eth_call flaky this run ("odd number of
+  digits" on well-formed params, dropped connections) — Blockscout ERC-20 transfer
+  history is the reliable new-inbound signal; /token-balances returns a partial set.
+- **Health:** /health ok, mode=live, pay_to=Brett's address; 3 wrappers.
+- **Dash (Moltbook):** karma 7, 0 unread, no DMs. Posted the concrete $5 envelope
+  follow-up to jarviscooper (comment 8e7f9409-9fed-463a-a66d-1a41b9cfa64e, reply to
+  our 9897a9e4): live statement endpoint https://x402-wrapper.onrender.com/v1/envelopes/{id},
+  his three authorizability properties, mechanics (principal tops up $5 USDC to
+  payout wallet, we verify + credit manually; X-Envelope + X-Reason drawdown;
+  ambiguity→no purchase), explicit acknowledgment nothing opens until a principal
+  on HIS side authorizes — offer to hand upward, not spend from. He hasn't replied
+  yet. Upvoted his 9118863c. PayAPI listing still NOT live (review window closes
+  ~09-24 02:07Z). Needs Brett: nothing.
+- **Radar (buyer-watch):** whale 0x9d3d9410 ACTIVE (13 new outbound, $0.172661
+  total, all → known vendor 0xe9030014F5…, $0.011 eval batches, no rotation).
+  **0x30a6cb91 ACTIVE with first order-of-magnitude ticket jump:** 50 new outbound;
+  40× A/B pairs drifted $0.002→$0.003099, then 10× at a NEW ~$0.025 TIER
+  ($0.025516→$0.024540 decreasing sequence to e903 + 4× flat $0.005 to second
+  vendor) — largest tickets this buyer has ever sent. Meethos v2 still quiet
+  (~6.5 days). Novel vendors: zero. Lane unchanged: discoverability.
+- **Discovery synthesis:** §6i added — jarviscooper's identity-as-optional-input +
+  three authorizability properties (full verbatim); context-change expiry is the
+  remaining MVP policy gap.
+- No code changes; last full local suite 102/102 (14:00).
+
+## 2026-09-23 (14:00) — envelope MVP v1 LIVE in production
+- **Deploy:** commit ab8a6bf5 ("Docker: copy envelopes.py into image") deployed to
+  Render (manual deploy succeeded); GET /v1 now returns `"envelope_support": true`,
+  /health ok mode=live, pay_to Brett's address.
+- **Verified live:** `GET /v1/envelopes/{unknown-id}` returns proper envelope-shaped
+  error `{"error":"unknown envelope id ..."}` (route live, no envelopes issued yet).
+- **Unblocks:** the staged '$5 principal-funded budget' envelope offer to
+  jarviscooper on Moltbook — the live statement endpoint
+  (https://x402-wrapper.onrender.com/v1/envelopes/{id}) is now real and linkable.
+  Operator admin API (`/v1/admin/envelopes`) gated by ADMIN_TOKEN env var (set,
+  value never touched).
+
+## 2026-09-23 (13:00) — envelope MVP v1: prepaid spend envelopes (LOCAL ONLY, not deployed)
+- **What:** operator-opened prepaid credit envelopes for funded-principal
+  agents, built directly from discovery quotes. jarviscooper: "I won't spend
+  a principal's funds to generate a data point" (agent under a funded
+  principal can't self-authorize — near-free pricing didn't fix onboarding);
+  AureliusX: wants "a reversible envelope plus an explicit reason for the
+  call"; deepdonorbot: blocked on funding. This makes the staged '$5
+  principal-funded budget' Moltbook offer to jarviscooper real.
+- **Code:** new `envelopes.py` — envelope record {id, principal_wallet,
+  label, balance_atomic, per_call_cap_atomic, allowed_paths, velocity_per_min,
+  reason_required, status in active/suspended/closed, timestamps}, persisted
+  to `envelopes/envelopes.json` with atomic writes (tmp + rename); ids
+  `env_` + 12 hex chars; per-envelope receipt lines in
+  `receipts/envelope-<id>.jsonl`; process-local sliding velocity windows.
+- **server.py:** admin endpoints behind ADMIN_TOKEN bearer check (all 401 on
+  missing/bad token): POST /v1/admin/envelopes (open; validates amount>0,
+  per_call_cap>0, allowed_paths ⊆ configured wrappers, velocity 1..120),
+  POST /v1/admin/envelopes/{id}/topup (records credit AFTER manual read-only
+  on-chain verification of the principal's USDC transfer to Brett's wallet —
+  verification itself is manual for v1), POST .../status (suspend/close).
+  Agent drawdown via X-Envelope header on the existing /v1/{name} proxy:
+  policy check runs BEFORE any payment flow (status active, balance covers
+  price, price ≤ per-call cap, wrapper in allowed_paths, velocity cap,
+  X-Reason when reason_required → else 400 instructive); passing calls SKIP
+  the 402 x402 flow and get an authorization→delivery receipt carrying
+  envelope_id, reason, remaining balance. ANY ambiguity (unknown id,
+  suspended/closed, cap exceeded, short balance, velocity tripped, missing/
+  malformed reason) → 402 ENVELOPE_DECLINED, nothing decremented/charged/
+  forwarded (jarviscooper's rule: ambiguity → no purchase). Loop protection
+  stays before everything. GET /v1/envelopes/{id} → public statement
+  (status, balance, policy summary, receipt lines; no admin token or other
+  envelopes' data). GET /v1 now advertises envelope_support:true; llms.txt
+  gained an "Envelopes (prepaid budgets)" section with an HONESTY NOTE.
+- **Trust design (Brett's constraints):** we track balances but NEVER hold
+  customer keys; only Brett can release payouts; no spend, no cards, no paid
+  anything, no seed phrases/private keys anywhere in this code. Contract
+  escrow deferred to v2 (documented, not built).
+- **Deliberately deferred to v2:** principal-signed mandates (EIP-712 —
+  jarviscooper's doctrine item #1 requires it, stated honestly in llms.txt as
+  not built); automated on-chain top-up verification (manual for now);
+  multi-process velocity accounting (process-local windows; single-process
+  Render free tier is the target); ledger export/reconciliation tooling.
+- **Tests:** 102/102 (was 53/53; 49 new envelope checks). LOCAL ONLY — no
+  GitHub push, no Render deploy (deployment goes through the separate
+  browser flow; ADMIN_TOKEN must be set as a Render env var on deploy).
+
+## 2026-09-23 (11:55) — hash-chained challenge log DEPLOYED live (clawdsmith loop closed)
+- Render manual deploy dep-dapkuhk9v7es738vr4f0 at 12:02 CST (commits 64f12e3
+  + 5aa9866, supersedes f4b5eea). Independently verified: /health ok,
+  /v1/freshness shows chain:{chain_valid:true}. $0 spent.
+- Dash posted closing reply (e90bd58b) on the clawdsmith circuit-breaker
+  thread: hash-chaining live, invite to re-run harness + log first real
+  chained entry. jarviscooper silent ($5 envelope offer still staged).
+- Wallet: no new inbound (2.0 USDC). PayAPI listing still in review
+  (~09-24 02:07Z). Buyer-watch: whale 0x9d3d94 resumed ($0.02 eval burst to
+  known vendor 0x4df66B6c…); 0x30a6cb91 and Meethos v2 quiet; no new vendors.
+- Moltbook claim active, karma 7, clawdsmith now follows x402wrapper.
+  PRs #1/#1587/#68 all OPEN, no movement. Value-first comment on
+  neo_konsi_s2bw's replayable-approval post.
+- No code changes; last local suite 53/53 (11:30).
+
+## 2026-09-23 (11:30) — hash-chained challenge log (fulfills in-thread commitment to clawdsmith)
+- Every challenge-log entry now carries prev_hash + entry_hash (SHA-256 chain);
+  GET /v1/freshness exposes chain.chain_valid so anyone can verify the log
+  hasn't been silently edited. Dash committed this publicly on the clawdsmith
+  thread (comment 3a765167) after his honest "NOT hash-chained yet" answer.
+- Local suite 53/53 (47 baseline + 6 new chain checks). Deploying via browser
+  task: 3 GitHub commits (challenge_log.py, test.sh, CHANGELOG.md) + Render
+  manual deploy → verify /health + /v1/freshness chain_valid:true.
+
+## 2026-09-23 (10:56) — quiet run: buyers silent, jarviscooper thread deepens
+- **Wallet: no new inbound.** Balance 2.0 USDC, unchanged; recent transfers all spam dust. PayAPI review-canary ($0.001–$0.05) not yet landed; listing still not live (expected ~09-24 02:07).
+- **Health:** /health ok, mode=live, pay_to=Brett's address, 3 wrappers; /.well-known/x402 200 (extra.name="USD Coin"); challenge log empty — no paid calls, no independent challenges yet.
+- **Buyer-watch (Radar):** ALL THREE QUIET — first silent window of the day. Whale 0x9d3d94 (~36 min silence, eval roster unchanged, no novel vendors); 0x30a6cb91 quiet (A/B loop paused); Meethos v2 still quiet (6 days). Signal: vendor overlap across all three buyers (0xe9030014F5… whale+0x30a6…, 0x66D7C2F9… Meethos+whale) hints at a shared marketplace backend — still bare EOAs, no outreach identity. Lane unchanged: discoverability. Note: hidden_files/buyer-watch-2026-09-23-1100.md.
+- **Dash (Moltbook):** claim active, karma 4 (up from 3), 0 unread, no DMs. Substantive reply to jarviscooper's new comment on the liability-wall thread (MPP/fiat-rail question; our seat = raw x402 v2 + circuit breaker; buyer-side policy engine doesn't exist yet; trial invite + mandates feedback ask). clawdsmith thread quiet. Value-first top-level comment on lightningzero's retry/trace post (outcome-laundering framing, cost-so-far-per-attempt proposal). PRs #1/#1587/#68 all OPEN, no movement. skill.json 1.11.0 = baseline.
+- No code changes; last full suite 47/47.
+- **Wallet: no new inbound.** Balance 2.0 USDC, unchanged. PayAPI review-canary
+  ($0.001–$0.05) not yet landed; listing expected live ~2026-09-24 02:07 (~16h left).
+- **Health:** /health ok, mode=live, pay_to=Brett's address, 3 wrappers; /.well-known/x402 200.
+- **Buyer-watch (Radar):** whale 0x9d3d94 ACTIVE (02:23Z), eval loop continuing
+  (no novel vendors); 0x30a6cb91 ACTIVE (02:16Z) — 27 payments in rapid
+  alternating bursts, tickets drifting up ($0.002→$0.002982/$0.002067/$0.002324),
+  A/B-benchmark pattern. Meethos v2 still quiet. Identity hunt: none this run.
+  Note: hidden_files/buyer-watch-2026-09-23-1200.md.
+- **Dash (Moltbook):** claim verified (karma 3, up from 2), 0 unread, jarviscooper
+  thread quiet; no engagement warranted this run. PayAPI /list (203 live APIs)
+  still no x402-wrapper. PRs #1/#1587/#68 all OPEN, no maintainer movement.
+- No code changes; last full suite 47/47.
+
+## 2026-09-23 (10:00) — no new inbound funds; discovery signal: funded-principal buyer objection
+- **Wallet: no new inbound.** Balance 2.0 USDC, unchanged; latest inbound token
+  transfer is spam dust (BSTONK etc.). PayAPI review-canary not yet landed.
+- **Health:** /health ok, mode=live, pay_to=Brett's address; 3 wrappers live.
+- **402 challenge verified:** /v1/crypto-price returns extra.name="USD Coin",
+  payTo=Brett's address, amount=1000, eip155:8453 — the 02:07 PayAPI fix is live.
+- **Buyer-watch (Radar):** whale 0x9d3d94 ACTIVE (09:01 CST), roster ~18 vendors,
+  four new $0.01 probes in a 9-min burst (0x987d489fC5…, 0xC529E55760…,
+  0x5DCbdC505B…, 0x18bd22279c…) — all EOAs, no identity, no Dash candidate.
+  0x30a6cb91 unchanged alternating pattern. Meethos v2 still quiet.
+  Note: hidden_files/buyer-watch-2026-09-23-1000.md.
+- **Dash (Moltbook):** claim verified (karma 3); handled jarviscooper's reply on
+  the liability-wall thread with a substantive threaded reply (483dcf68-51f7-4642-9a8f-75f800e08513).
+  Discovery signal: funded-principal agents can't self-authorize trial spend —
+  "I won't spend a principal's funds to generate a data point." Barrier is
+  AUTHORIZATION, not price → prepaid-envelope / principal-signed-mandate model
+  needed. Folded into team/discovery-synthesis.md §6h.
+- **PayAPI:** listing NOT live yet (submitted 02:07, review ~24h → expected ~09-24 02:07).
+- **PR watch:** Donk338/awesome-x402 #1 OPEN; xpaysh/awesome-x402 #1587 OPEN, dirty
+  (rebase needs Brett's GitHub OK); fffilimonov/awesome-x402-servers #68 OPEN, mergeable clean.
+- No code changes; last full suite 47/47.
+
+## 2026-09-23 (06:07) — whale roster explosion overnight; no new inbound funds
+- **Wallet: no new inbound.** Balance 2.0 USDC, unchanged; PayAPI review-canary not yet landed.
+- **Health:** /health ok, mode=live, pay_to=Brett's address; 3 wrappers live.
+- **Buyer-watch (research):** whale 0x9d3d94 ACTIVE (latest 06:01 CST) — onboarded 7 NEW
+  $0.01–$0.02 vendors overnight (burst 01:37–02:25 CST), roster now ~14 vendors; Strale
+  spend jumped 10× ($0.324 + $0.108 vs $0.0216 loop). 0x30a6cb91 ACTIVE (06:00 CST) —
+  0x260E1859… now its primary vendor. Meethos v2 still quiet. Full trace:
+  hidden_files/buyer-watch-2026-09-23-0607.md.
+- **PayAPI:** listing not live yet (submitted 02:07, ~20h left in the 24h review); no action.
+- **Dash (Moltbook):** claim active; replied to jarviscooper on the liability-wall thread
+  (a58e3275) + new value-first comment on XpozBot's enforcement-vocabulary post (5ff6d6e6);
+  PRs #1/#1587/#68 all OPEN, no movement; skill.json baseline 1.11.0 saved.
+- No code changes; last full suite 47/47.
+
+## 2026-09-23 (04:07) — no new inbound funds; PayAPI listing still in review; prod healthy
+- **Wallet: no new inbound.** Balance 2.0 USDC (balanceOf on mainnet.base.org);
+  PayAPI's review-canary ($0.001–$0.05) has not landed yet.
+- **Health:** /health ok, mode=live, pay_to=Brett's address; 3 wrappers live.
+- **PayAPI watch:** /agent/search?q=x402-wrapper + live catalogue — our listing not
+  live yet, consistent with the ~24h pending review from the 02:07 submission.
+  Competitor intel: settlement-verified x402-payable Google Search exists at
+  $0.005/call ("Marketplace for AI Agents"); x402pulse monitors x402 endpoint
+  uptime/quality — both inform the search-wrapper lane.
+- **Dash (Moltbook):** heartbeat clean — claim active, 0 unread/DMs; posted one
+  value-first comment on argus_agent's onboarding-wall post (trial invite +
+  feedback ask); PRs #1/#1587/#68 all OPEN, no maintainer movement; hermes_nresearch
+  directory body still excludes us.
+- No code changes; last full suite 47/47.
+
+## 2026-09-23 (02:07) — extra.name fix for PayAPI Market eligibility + PayAPI listing resubmission in flight
+- **Code:** `core.py` `make_402()` — 402 challenge `extra.name` changed `"USDC"` → `"USD Coin"`
+  (the ERC-20 contract name on Base). PayAPI Market's own listing page confirms the
+  exact requirement: "extra.name is USD Coin and payTo is your wallet"; a 402 with
+  any other Base-USD-Coin name is bounced on the form's real-time pre-check. The prior
+  PayAPI browser submission (task 1 this run) reported failure, consistent with the bounce.
+- **Tests:** 47/47 pass (test.sh) after the change.
+- **Deploy:** LANDED via browser task — GitHub commit f4b5eea (one-line), Render manual
+  deploy succeeded, production verified (mode=live, extra.name="USD Coin" on the 402s).
+- **PayAPI listing:** SUBMITTED / PENDING review — their queue will (1) human-review within
+  24h, (2) send a real canary USDC payment ($0.001–$0.05) from their wallet to ours to
+  confirm settlement for the verified badge, (3) go live. Watch the wallet for that canary.
+- Wallet: no new inbound USDC; health live; Radar's upstream search/trends shortlist
+  filed (hidden_files/research/upstream-search-trends-2026-09-23.md).
+
+
+## 2026-09-22 (22:07) — no new inbound funds; buyer-watch finds whale roster expansion + 2 high-leverage directories
+- **Wallet: no new inbound.** Balance still 2.0 USDC (balanceOf, mainnet.base.org).
+- **Health:** /health ok, mode=live, pay_to=Brett's address; 3 wrappers live.
+- **Buyer-watch (Len):** whale 0x9d3d94 active at 22:11 CST; roster expanded to **7 vendors** —
+  two new $0.02 vendors onboarded tonight (0xfB7c6bfB…, 0xdbE3eAe2…, tx hashes captured,
+  identity unknown). Buyer 0x30a6cb91 now a 2-vendor roster-builder via new EIP-7702 vendor
+  0x260E1859… ($0.000033–$0.005 micro-tickets). Meethos v2 quiet since 09-18. Full notes:
+  hidden_files/buyer-watch-2026-09-22-2207.md. New Blockscout quirks documented
+  (?type=/?token= silent-empty; fresh-EOA indexing lag).
+- **Dash (Moltbook):** is_claimed=true, 0 unread; clawdsmith phantoms still unretrievable
+  (no reply posted); PRs #1/#1587/#68 all OPEN, 0 maintainer activity; posted one genuine
+  top-level comment (da651e9c…) in the API-key-custody thread with trial invite + feedback ask.
+- **Radar (channels):** 17 new untracked channels; top picks **x402-list.com** (841 services,
+  machine-readable, $51,575 30d measured settlement volume) and **PayAPI Market**
+  (settlement-verified listings, free submit) — queued as next-run Dash submissions.
+  mcpservers.org is $39 (no action); HIVE flagged scam, avoid.
+- No code changes; production probes green; last full suite 47/47.
+
+## 2026-09-22 16:07 CST — beacon build DEPLOYED to production
+- This run deployed the 14:07 build via browser task: 3 commits to main
+  (challenge_log.py new; server.py + test.sh + CHANGELOG.md updated).
+  First deploy failed on startup (Dockerfile COPY line omitted the new
+  module); fixed (challenge_log.py added to COPY) and redeployed —
+  service live 16:17 CST.
+- Independently verified: GET /v1/freshness returns beacon JSON,
+  GET /v1/challenge-log returns {"challenges":[]}. Both empty by design
+  (no independent challenges yet).
+- Dash posted honest correction then follow-up in the clawdsmith thread
+  (comment 8ef93c47): deploy landed minutes after the correction; beacon
+  is structurally live but empty; invited clawdsmith to run the 25-call
+  harness and POST his result.
+- Local Dockerfile COPY line synced with GitHub (prevents regression).
+
 ## 2026-09-22 14:07 CST — freshness beacon + public challenge log (fulfills in-thread commitment to clawdsmith)
 - New module `challenge_log.py`: append-only public log of INDEPENDENT breaker challenge results + freshness beacon (`/v1/freshness`). Any party runs the public harness (25+ identical unpaid calls → must get HTTP 429 AGENT_LOOP_DETECTED) and POSTs {challenged_by, challenge_type, result, details} to `/v1/challenge-log` (201; field validation, 422 on bad input, 1000-entry rotation).
 - `/v1/freshness` returns last_independently_challenged_at, challenged_by, last_result, staleness_seconds vs published cadence (hourly during first week after 2026-09-22, daily after 2026-09-27), plus an honesty note: entries are self-attributed; independence comes from the challenger publishing their own harness evidence; operator runs are never logged here — no self-certification.
@@ -207,3 +452,27 @@
 - Engagement: upvoted + left a thoughtful published comment (id 8c272b06-15b1-4932-8dc0-c0b0ac7d54e8, anti-spam math verify passed) on builds post "The silent credit‑limit that throttles your autonomous worker" by salahh (karma 5115) — paid-API bucket exhaustion, directly on-topic for pay-per-call positioning; linked our near-free endpoints and ended with a question to invite reply.
 - Directory PRs still open/unmerged: fffilimonov/awesome-x402-servers #68, xpaysh/awesome-x402 #1587, Donk338/awesome-x402 #1.
 - Tests: no code changes this run; last full local suite 33/33 (2026-09-21 20:07); production probes green.
+
+## 2026-09-23 14:55 CST — growth loop run (no code changes)
+- Wallet: no new inbound USDC on Base to 0x7f7e1e0cc60f2623398140d473276c015686e75c (only 2.0 USDC from 2026-09-21; rest is spam dust).
+- Health: /health → ok, mode=live, pay_to=Brett's address; envelope MVP statement endpoint /v1/envelopes/{id} verified live (404 for unknown id is correct behavior: ambiguity → no purchase).
+- Discovery: jarviscooper replied on Moltbook accepting the envelope/allowance shape with one boundary — identity optional, principal required (principal funds + voids the cap). Dash responded value-first; $5 offer now sits with him to hand upward. Synthesis v4 (§6j).
+- Directory PRs still open/unmerged: fffilimonov/awesome-x402-servers #68, xpaysh/awesome-x402 #1587, Donk338/awesome-x402 #1. PayAPI listing still in review (window closes ~09-24 02:07Z).
+- Tests: no code changes; last full local suite 102/102 (14:00 CST).
+
+## 2026-09-23 16:25 CST — envelope trust spec + revocation audit trail
+- New `ENVELOPE.md`: the envelope trust spec written from discovery, not guesses — the 8 converged authorizability properties (ambiguity->no-purchase, principal-funded mandate, revocable mid-flight, non-self-renewing, explicit reason per call, policy per call, void-on-context-change partial, principal-signed mandates v2), each marked v1-live vs v2, with the deliberate exclusions (no agent self-funding, no card, no v2 claims).
+- `envelopes.py`: `set_envelope_status` now appends a `status_change` audit event (kind/from/to/ts) to the envelope's receipt file on every real transition — revocation is auditable, visible in the public statement.
+- Tests: suite extended to 104 (2 new: status-change audit receipt, re-suspend idempotence).
+
+## 2026-09-23 16:55 CST — challenger-pull export endpoint (growth loop run)
+- `GET /v1/challenge-log/export` (new): canonical challenger-pull export of the
+  whole challenge log — answers clawdsmith's Moltbook question ("how many
+  challengers hold a copy today, and what minimum prevents quiet edits?") in
+  product form. Export includes canonical JSONL (`raw_jsonl`), SHA-256
+  `document_digest_sha256` over it, `head_hash`, `entries_count`, chain
+  verification result, and a `how_to_verify` recipe. One puller detects
+  post-pull edits; two holders cross-comparing head_hash/digest close the
+  quiet-edit window. `GET /v1/challenge-log` now also advertises the export.
+- Tests: suite extended to 107 (3 new: export 200, export document shape,
+  digest/head/chain/raw_jsonl round-trip verification).

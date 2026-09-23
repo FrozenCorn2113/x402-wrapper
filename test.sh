@@ -5,11 +5,16 @@ cd "$(dirname "$0")"
 PY=.venv/bin/python
 BASE=http://127.0.0.1:8000
 
+# Admin auth for envelope tests (test-only token; real deployments set their own).
+export ADMIN_TOKEN=test-admin-token
+
 $PY server.py & SRV=$!
 trap "kill $SRV 2>/dev/null" EXIT
 sleep 3
 # Replay-protection state persists across runs; reset for a hermetic test.
 rm -f receipts/spent_hashes.json challenge-log/challenge_log.jsonl challenge-log/challenge_log.jsonl.bak
+# Envelope ledger state persists too; reset for hermetic tests.
+rm -f envelopes/envelopes.json receipts/envelope-*.jsonl
 
 pass=0; fail=0
 check() { # check <label> <expected_code> <curl args...>
@@ -124,6 +129,23 @@ for r in rows:
 print('PASS: chain links + entry hashes verify')
 PYEOF
 [ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: chain verification"; fail=$((fail+1)); }
+check "challenge-log export -> 200" 200 "$BASE/v1/challenge-log/export"
+grep -q '"format":"x402wrapper-challenge-export"' /tmp/wrap_test.json && grep -q '"head_hash":"[0-9a-f]\{64\}"' /tmp/wrap_test.json && grep -q '"document_digest_sha256":"[0-9a-f]\{64\}"' /tmp/wrap_test.json && echo "PASS: export document shape" && pass=$((pass+1)) || { echo "FAIL: export shape"; fail=$((fail+1)); }
+$PY - <<'PYEOF'
+import json, hashlib
+doc = json.load(open('/tmp/wrap_test.json'))
+rows = doc['entries']
+assert doc['entries_count'] == 2 == len(rows), doc['entries_count']
+assert doc['head_hash'] == rows[-1]['entry_hash'], 'head_hash mismatch'
+# digest recomputes from the raw canonical JSONL
+assert hashlib.sha256(doc['raw_jsonl'].encode()).hexdigest() == doc['document_digest_sha256'], 'document digest mismatch'
+assert doc['chain_valid'] is True, 'chain_valid false'
+# raw_jsonl round-trips: parse -> rows equal entries
+raw_rows = [json.loads(line) for line in doc['raw_jsonl'].splitlines() if line.strip()]
+assert raw_rows == rows, 'raw_jsonl round-trip mismatch'
+print('PASS: export digest/head/chain/raw_jsonl verify')
+PYEOF
+[ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: export verification"; fail=$((fail+1)); }
 check "freshness reports chain_valid" 200 "$BASE/v1/freshness"
 grep -q '"chain_valid":true' /tmp/wrap_test.json && echo "PASS: freshness chain_valid:true" && pass=$((pass+1)) || { echo "FAIL: freshness chain_valid"; fail=$((fail+1)); }
 check "bad submit (missing fields) -> 422" 422 -X POST -H 'Content-Type: application/json' -d '{"result":"pass"}' "$BASE/v1/challenge-log"
@@ -131,6 +153,100 @@ check "bad submit (bad result) -> 422" 422 -X POST -H 'Content-Type: application
 check "freshness beacon reflects submission" 200 "$BASE/v1/freshness"
 grep -q '"challenged_by":"harness-ci v1"' /tmp/wrap_test.json && grep -q '"last_result":"pass"' /tmp/wrap_test.json && grep -qv '"staleness_seconds":null' /tmp/wrap_test.json && echo "PASS: beacon shows latest independent challenge" && pass=$((pass+1)) || { echo "FAIL: beacon after submit"; fail=$((fail+1)); }
 grep -q '"target_interval_seconds": *3600' /tmp/wrap_test.json && echo "PASS: week-1 hourly cadence" && pass=$((pass+1)) || { echo "FAIL: cadence"; fail=$((fail+1)); }
+
+echo "--- envelopes (prepaid budgets) ---"
+WALLET=0x1234567890abcdef1234567890abcdef12345678
+AUTH="Authorization: Bearer $ADMIN_TOKEN"
+CREATE_BODY="{\"principal_wallet\":\"$WALLET\",\"label\":\"jarviscooper trial\",\"usd_amount\":5,\"per_call_cap\":0.001,\"allowed_paths\":[\"weather-now\",\"crypto-price\",\"echo\"],\"velocity_per_min\":60,\"reason_required\":false}"
+
+echo "--- envelope admin auth + create ---"
+check "admin create without token -> 401" 401 -X POST -H 'Content-Type: application/json' -d "$CREATE_BODY" "$BASE/v1/admin/envelopes"
+check "admin create with token -> 201" 201 -X POST -H "$AUTH" -H 'Content-Type: application/json' -d "$CREATE_BODY" "$BASE/v1/admin/envelopes"
+ENV_ID=$($PY -c "import json; print(json.load(open('/tmp/wrap_test.json'))['envelope']['id'])")
+[ -n "$ENV_ID" ] && echo "PASS: envelope id $ENV_ID captured" && pass=$((pass+1)) || { echo "FAIL: envelope id capture"; fail=$((fail+1)); }
+grep -q '"balance_atomic": *5000000' /tmp/wrap_test.json && grep -q '"status": *"active"' /tmp/wrap_test.json && echo "PASS: create response balance/status" && pass=$((pass+1)) || { echo "FAIL: create response"; fail=$((fail+1)); }
+
+echo "--- envelope drawdown spends balance ---"
+check "envelope drawdown echo -> 200" 200 -H "X-Envelope: $ENV_ID" "$BASE/v1/echo?msg=env-draw-1"
+grep -q '"type": *"envelope"' /tmp/wrap_test.json && grep -q "$ENV_ID" /tmp/wrap_test.json && echo "PASS: envelope receipt attached" && pass=$((pass+1)) || { echo "FAIL: envelope receipt"; fail=$((fail+1)); }
+grep -q '"balance_remaining_atomic": *4999900' /tmp/wrap_test.json && echo "PASS: receipt shows remaining balance" && pass=$((pass+1)) || { echo "FAIL: receipt balance"; fail=$((fail+1)); }
+
+echo "--- envelope statement ---"
+check "statement -> 200" 200 "$BASE/v1/envelopes/$ENV_ID"
+grep -q '"balance_atomic": *4999900' /tmp/wrap_test.json && grep -q '"per_call_cap_atomic": *1000' /tmp/wrap_test.json && grep -q '"reason_required": *false' /tmp/wrap_test.json && echo "PASS: statement balance + policy" && pass=$((pass+1)) || { echo "FAIL: statement contents"; fail=$((fail+1)); }
+grep -q '"call_id"' /tmp/wrap_test.json && echo "PASS: statement includes receipt lines" && pass=$((pass+1)) || { echo "FAIL: statement receipts"; fail=$((fail+1)); }
+check "catalog advertises envelope_support" 200 "$BASE/v1"
+grep -q '"envelope_support": *true' /tmp/wrap_test.json && echo "PASS: envelope_support:true in /v1" && pass=$((pass+1)) || { echo "FAIL: envelope_support"; fail=$((fail+1)); }
+check "unknown envelope statement -> 404" 404 "$BASE/v1/envelopes/env_abcdef012345"
+check "unknown envelope drawdown -> 402" 402 -H "X-Envelope: env_abcdef012345" "$BASE/v1/echo?msg=env-unk"
+grep -q 'ENVELOPE_DECLINED' /tmp/wrap_test.json && echo "PASS: unknown envelope -> ENVELOPE_DECLINED" && pass=$((pass+1)) || { echo "FAIL: unknown envelope code"; fail=$((fail+1)); }
+
+echo "--- per-call cap enforcement ---"
+check "create low-cap envelope -> 201" 201 -X POST -H "$AUTH" -H 'Content-Type: application/json' \
+  -d "{\"principal_wallet\":\"$WALLET\",\"label\":\"cap test\",\"usd_amount\":1,\"per_call_cap\":0.00005,\"allowed_paths\":[\"echo\"],\"velocity_per_min\":60,\"reason_required\":false}" \
+  "$BASE/v1/admin/envelopes"
+ENV_CAP=$($PY -c "import json; print(json.load(open('/tmp/wrap_test.json'))['envelope']['id'])")
+check "cap-exceeded drawdown -> 402" 402 -H "X-Envelope: $ENV_CAP" "$BASE/v1/echo?msg=env-cap"
+grep -q 'ENVELOPE_DECLINED' /tmp/wrap_test.json && grep -q 'per-call cap' /tmp/wrap_test.json && echo "PASS: cap enforced w/ ENVELOPE_DECLINED" && pass=$((pass+1)) || { echo "FAIL: cap enforcement"; fail=$((fail+1)); }
+# Nothing was decremented: statement still shows full balance.
+check "capped envelope untouched" 200 "$BASE/v1/envelopes/$ENV_CAP"
+grep -q '"balance_atomic": *1000000' /tmp/wrap_test.json && echo "PASS: no decrement on decline" && pass=$((pass+1)) || { echo "FAIL: decrement on decline"; fail=$((fail+1)); }
+
+echo "--- reason-required policy ---"
+check "create reason-required envelope -> 201" 201 -X POST -H "$AUTH" -H 'Content-Type: application/json' \
+  -d "{\"principal_wallet\":\"$WALLET\",\"label\":\"reason test\",\"usd_amount\":1,\"per_call_cap\":0.001,\"allowed_paths\":[\"echo\"],\"velocity_per_min\":60,\"reason_required\":true}" \
+  "$BASE/v1/admin/envelopes"
+ENV_REASON=$($PY -c "import json; print(json.load(open('/tmp/wrap_test.json'))['envelope']['id'])")
+check "missing X-Reason -> 400" 400 -H "X-Envelope: $ENV_REASON" "$BASE/v1/echo?msg=env-reason"
+grep -q 'REASON_REQUIRED' /tmp/wrap_test.json && grep -q 'X-Reason' /tmp/wrap_test.json && echo "PASS: reason-required rejection" && pass=$((pass+1)) || { echo "FAIL: reason-required"; fail=$((fail+1)); }
+check "with X-Reason -> 200" 200 -H "X-Envelope: $ENV_REASON" -H "X-Reason: smoke test of envelope policy" "$BASE/v1/echo?msg=env-reason-ok"
+grep -q 'smoke test of envelope policy' /tmp/wrap_test.json && echo "PASS: reason recorded on receipt" && pass=$((pass+1)) || { echo "FAIL: reason on receipt"; fail=$((fail+1)); }
+
+echo "--- velocity cap ---"
+check "create velocity-2 envelope -> 201" 201 -X POST -H "$AUTH" -H 'Content-Type: application/json' \
+  -d "{\"principal_wallet\":\"$WALLET\",\"label\":\"velocity test\",\"usd_amount\":1,\"per_call_cap\":0.001,\"allowed_paths\":[\"echo\"],\"velocity_per_min\":2,\"reason_required\":false}" \
+  "$BASE/v1/admin/envelopes"
+ENV_VEL=$($PY -c "import json; print(json.load(open('/tmp/wrap_test.json'))['envelope']['id'])")
+check "velocity call 1 -> 200" 200 -H "X-Envelope: $ENV_VEL" "$BASE/v1/echo?msg=env-vel-1"
+check "velocity call 2 -> 200" 200 -H "X-Envelope: $ENV_VEL" "$BASE/v1/echo?msg=env-vel-2"
+check "velocity call 3 -> 402" 402 -H "X-Envelope: $ENV_VEL" "$BASE/v1/echo?msg=env-vel-3"
+grep -q 'ENVELOPE_DECLINED' /tmp/wrap_test.json && grep -q 'velocity cap' /tmp/wrap_test.json && echo "PASS: velocity cap trips" && pass=$((pass+1)) || { echo "FAIL: velocity cap"; fail=$((fail+1)); }
+
+echo "--- insufficient balance + topup + suspend ---"
+check "create dust envelope -> 201" 201 -X POST -H "$AUTH" -H 'Content-Type: application/json' \
+  -d "{\"principal_wallet\":\"$WALLET\",\"label\":\"dust test\",\"usd_amount\":0.0001,\"per_call_cap\":0.001,\"allowed_paths\":[\"echo\"],\"velocity_per_min\":60,\"reason_required\":false}" \
+  "$BASE/v1/admin/envelopes"
+ENV_DUST=$($PY -c "import json; print(json.load(open('/tmp/wrap_test.json'))['envelope']['id'])")
+check "dust call 1 (exact balance) -> 200" 200 -H "X-Envelope: $ENV_DUST" "$BASE/v1/echo?msg=env-dust-1"
+check "dust call 2 (short) -> 402" 402 -H "X-Envelope: $ENV_DUST" "$BASE/v1/echo?msg=env-dust-2"
+grep -q 'ENVELOPE_DECLINED' /tmp/wrap_test.json && echo "PASS: insufficient balance refused" && pass=$((pass+1)) || { echo "FAIL: insufficient balance"; fail=$((fail+1)); }
+check "topup -> 200" 200 -X POST -H "$AUTH" -H 'Content-Type: application/json' -d '{"usd_amount":0.001,"tx_hash":"0xmanualverification"}' "$BASE/v1/admin/envelopes/$ENV_DUST/topup"
+grep -q '"balance_atomic": *1000' /tmp/wrap_test.json && echo "PASS: topup recorded" && pass=$((pass+1)) || { echo "FAIL: topup"; fail=$((fail+1)); }
+check "post-topup drawdown -> 200" 200 -H "X-Envelope: $ENV_DUST" "$BASE/v1/echo?msg=env-dust-3"
+check "suspend -> 200" 200 -X POST -H "$AUTH" -H 'Content-Type: application/json' -d '{"status":"suspended"}' "$BASE/v1/admin/envelopes/$ENV_DUST/status"
+check "suspended drawdown -> 402" 402 -H "X-Envelope: $ENV_DUST" "$BASE/v1/echo?msg=env-dust-4"
+grep -q 'ENVELOPE_DECLINED' /tmp/wrap_test.json && echo "PASS: suspended envelope refused" && pass=$((pass+1)) || { echo "FAIL: suspended refusal"; fail=$((fail+1)); }
+check "statement shows suspended" 200 "$BASE/v1/envelopes/$ENV_DUST"
+grep -q '"status": *"suspended"' /tmp/wrap_test.json && echo "PASS: statement status suspended" && pass=$((pass+1)) || { echo "FAIL: statement status"; fail=$((fail+1)); }
+grep -q '"kind": *"status_change"' /tmp/wrap_test.json && grep -q '"from": *"active"' /tmp/wrap_test.json && grep -q '"to": *"suspended"' /tmp/wrap_test.json && echo "PASS: status change wrote audit receipt" && pass=$((pass+1)) || { echo "FAIL: status-change audit receipt"; fail=$((fail+1)); }
+check "re-suspend (no change) -> 200" 200 -X POST -H "$AUTH" -H 'Content-Type: application/json' -d '{"status":"suspended"}' "$BASE/v1/admin/envelopes/$ENV_DUST/status"
+
+echo "--- admin validation ---"
+check "zero amount -> 400" 400 -X POST -H "$AUTH" -H 'Content-Type: application/json' \
+  -d "{\"principal_wallet\":\"$WALLET\",\"label\":\"bad\",\"usd_amount\":0,\"per_call_cap\":0.001,\"allowed_paths\":[\"echo\"],\"velocity_per_min\":60,\"reason_required\":false}" \
+  "$BASE/v1/admin/envelopes"
+check "unknown wrapper in paths -> 400" 400 -X POST -H "$AUTH" -H 'Content-Type: application/json' \
+  -d "{\"principal_wallet\":\"$WALLET\",\"label\":\"bad\",\"usd_amount\":1,\"per_call_cap\":0.001,\"allowed_paths\":[\"nope\"],\"velocity_per_min\":60,\"reason_required\":false}" \
+  "$BASE/v1/admin/envelopes"
+check "velocity out of range -> 400" 400 -X POST -H "$AUTH" -H 'Content-Type: application/json' \
+  -d "{\"principal_wallet\":\"$WALLET\",\"label\":\"bad\",\"usd_amount\":1,\"per_call_cap\":0.001,\"allowed_paths\":[\"echo\"],\"velocity_per_min\":500,\"reason_required\":false}" \
+  "$BASE/v1/admin/envelopes"
+check "bad status value -> 400" 400 -X POST -H "$AUTH" -H 'Content-Type: application/json' -d '{"status":"deleted"}' "$BASE/v1/admin/envelopes/$ENV_DUST/status"
+check "topup without token -> 401" 401 -X POST -H 'Content-Type: application/json' -d '{"usd_amount":1}' "$BASE/v1/admin/envelopes/$ENV_DUST/topup"
+
+echo "--- llms.txt advertises envelopes ---"
+check "llms.txt envelope section" 200 "$BASE/llms.txt"
+grep -q 'Envelopes (prepaid budgets)' /tmp/wrap_test.json && grep -q 'HONESTY NOTE' /tmp/wrap_test.json && grep -q 'X-Envelope' /tmp/wrap_test.json && echo "PASS: llms.txt envelope copy + honesty note" && pass=$((pass+1)) || { echo "FAIL: llms.txt envelopes"; fail=$((fail+1)); }
 
 echo ""
 echo "RESULT: $pass passed, $fail failed"

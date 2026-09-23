@@ -230,9 +230,17 @@ def set_envelope_status(envelope_id: str, status: object) -> tuple[dict | None, 
         env = envs.get(envelope_id or "")
         if env is None:
             return None, f"unknown envelope id '{envelope_id}'"
+        old_status = env.get("status")
         env["status"] = status_s
         env["updated_at"] = now_iso()
         _save()
+        if old_status != status_s:
+            _append_envelope_receipt_line(envelope_id, {
+                "kind": "status_change",
+                "ts": now_iso(),
+                "from": old_status,
+                "to": status_s,
+            })
         return dict(env), None
 
 
