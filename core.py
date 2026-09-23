@@ -133,6 +133,10 @@ def make_402(wrapper: dict) -> dict:
     return {
         "x402Version": X402_VERSION,
         "error": "payment required",
+        # BlockRun pattern (blockrunai/awesome-blockrun docs/x402/how-it-works.md):
+        # the JSON body repeats the price as price.amount in USD at the top
+        # level, for clients that only read the body and never parse accepts[].
+        "price": {"amount": pricing["price_usdc"], "currency": "USD"},
         "resource": {
             "url": resource_url,
             "description": wrapper.get("description", ""),
@@ -147,9 +151,10 @@ def make_402(wrapper: dict) -> dict:
                 "payTo": resolve_pay_to(wrapper),
                 "maxTimeoutSeconds": 300,
                 "extra": {
-                    # "USD Coin" is the ERC-20 contract name for USDC on Base;
-                    # PayAPI Market (and any strict x402 directory checker)
-                    # requires this exact value on Base.
+                    # "USD Coin" is the canonical ERC-20 contract name for USDC
+                    # on Base. Verified 2026-09-24 against Nansen's live 402 —
+                    # they send the identical value. (PayAPI's "USDC"
+                    # expectation was a misread, not our defect.)
                     "name": "USD Coin",
                     "decimals": USDC_DECIMALS,
                     "settlement": "direct-transfer",
@@ -165,11 +170,16 @@ def make_402(wrapper: dict) -> dict:
 
 
 def payment_required_headers(wrapper: dict) -> dict:
-    """v2 wire format: base64 PaymentRequired JSON in the PAYMENT-REQUIRED header."""
+    """v2 wire format: base64 PaymentRequired JSON in the PAYMENT-REQUIRED header.
+
+    BlockRun ships the same value under X-Payment-Required too, so we mirror
+    both — buyers already parsing BlockRun challenges read either form.
+    """
     raw = json.dumps(make_402(wrapper), separators=(",", ":")).encode()
     import base64
 
-    return {"PAYMENT-REQUIRED": base64.b64encode(raw).decode()}
+    b64 = base64.b64encode(raw).decode()
+    return {"PAYMENT-REQUIRED": b64, "X-Payment-Required": b64}
 
 
 def looks_like_payment_payload(proof: str) -> bool:

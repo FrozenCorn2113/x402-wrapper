@@ -69,6 +69,19 @@ check "no proof -> 402" 402 "$BASE/v1/weather-now?latitude=43.7&longitude=-79.4&
 grep -q '"x402Version":2' /tmp/wrap_test.json && grep -q '"resource"' /tmp/wrap_test.json && grep -q '"accepts"' /tmp/wrap_test.json && echo "PASS: 402 body is v2 PaymentRequired" && pass=$((pass+1)) || { echo "FAIL: 402 body shape"; fail=$((fail+1)); }
 grep -q '"network":"eip155:8453"' /tmp/wrap_test.json && grep -q '"asset":"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"' /tmp/wrap_test.json && echo "PASS: 402 uses CAIP-2 network + asset address" && pass=$((pass+1)) || { echo "FAIL: 402 network/asset"; fail=$((fail+1)); }
 grep -qi '^payment-required:' /tmp/wrap_headers.txt && echo "PASS: PAYMENT-REQUIRED header present" && pass=$((pass+1)) || { echo "FAIL: PAYMENT-REQUIRED header"; fail=$((fail+1)); }
+grep -qi '^x-payment-required:' /tmp/wrap_headers.txt && echo "PASS: X-Payment-Required header mirror present" && pass=$((pass+1)) || { echo "FAIL: X-Payment-Required mirror"; fail=$((fail+1)); }
+grep -q '"price":{"amount":"0.0005","currency":"USD"}' /tmp/wrap_test.json && echo "PASS: 402 body repeats price at top level (BlockRun pattern)" && pass=$((pass+1)) || { echo "FAIL: 402 top-level price"; fail=$((fail+1)); }
+$PY - <<'PYEOF'
+import re, base64, json
+hdrs = open('/tmp/wrap_headers.txt').read()
+a = re.search(r'(?im)^payment-required:\s*(\S+)', hdrs).group(1)
+b = re.search(r'(?im)^x-payment-required:\s*(\S+)', hdrs).group(1)
+assert a == b, 'header values differ'
+d = json.loads(base64.b64decode(a.strip()))
+assert d['price'] == {'amount': '0.0005', 'currency': 'USD'}, d.get('price')
+print('PASS: headers identical; decoded challenge carries top-level price')
+PYEOF
+[ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: header mirror verification"; fail=$((fail+1)); }
 hdr=$(grep -i '^payment-required:' /tmp/wrap_headers.txt | sed 's/^[Pp][Aa][Yy][Mm][Ee][Nn][Tt]-//' | tr -d ' \r\n' | cut -d: -f2-)
 echo "$hdr" | $PY -c "import sys,base64,json; d=json.loads(base64.b64decode(sys.stdin.read().strip())); assert d['x402Version']==2 and d['accepts'][0]['scheme']=='exact', 'bad challenge'; print('PASS: PAYMENT-REQUIRED header decodes to valid v2 challenge')" && pass=$((pass+1)) || { echo "FAIL: header challenge decode"; fail=$((fail+1)); }
 
