@@ -236,6 +236,20 @@ assert raw_rows == rows, 'raw_jsonl round-trip mismatch'
 print('PASS: export digest/head/chain/raw_jsonl verify')
 PYEOF
 [ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: export verification"; fail=$((fail+1)); }
+# clawdsmith's restart-vs-rewrite distinguishability (2026-09-24): the export
+# carries the boot epoch; a fresh genesis after a restart must be labeled,
+# not silent. Boot fields must not rotate the digest.
+$PY - <<'PYEOF' && echo "PASS: export carries boot epoch + durability disclosure" && pass=$((pass+1)) || { echo "FAIL: export boot epoch"; fail=$((fail+1)); }
+import json, re
+doc = json.load(open('/tmp/wrap_test.json'))
+assert re.fullmatch(r'[0-9a-f]{64}', doc['boot_genesis_hash']), 'bad boot_genesis_hash'
+assert isinstance(doc['boot_epoch_unix'], int), 'boot_epoch_unix must be an int'
+assert doc['boot_genesis_hash'] == doc['entries'][0]['entry_hash'], 'boot hash must be the first entry'
+assert doc['boot_epoch_unix'] == doc['entries'][0]['submitted_at_unix'], 'boot epoch must be the first entry time'
+assert 'ephemeral' in doc['durability'].lower(), 'durability disclosure must name ephemerality'
+assert 'boot_epoch_unix' in doc['how_to_verify'], 'verify docs must describe restart vs tampering'
+print('PASS')
+PYEOF
 check "freshness reports chain_valid" 200 "$BASE/v1/freshness"
 grep -q '"chain_valid":true' /tmp/wrap_test.json && echo "PASS: freshness chain_valid:true" && pass=$((pass+1)) || { echo "FAIL: freshness chain_valid"; fail=$((fail+1)); }
 check "bad submit (missing fields) -> 422" 422 -X POST -H 'Content-Type: application/json' -d '{"result":"pass"}' "$BASE/v1/challenge-log"
@@ -344,6 +358,21 @@ d = json.load(open('/tmp/wrap_test.json'))
 assert d['roster_digest_sha256'] == os.environ['DIGEST3'], 'digest must not rotate on unrelated checkpoint appends'
 assert d['challenge_log_head_id'] > int(os.environ['HEADID3']), 'head id must advance with the log'
 assert d['challenge_log_head_hash'] != os.environ['HEADHASH3'], 'head hash must track the new log head'
+print('PASS')
+PYEOF
+# Roster carries the log's boot epoch too; same-epoch head movement must not
+# rotate the roster digest (boot fields are outside the SET digest).
+check "roster carries log boot epoch, digest still stable" 200 "$BASE/v1/holder-roster"
+$PY - <<'PYEOF' && echo "PASS: roster boot epoch + digest stable" && pass=$((pass+1)) || { echo "FAIL: roster boot epoch"; fail=$((fail+1)); }
+import json, os, re
+d = json.load(open('/tmp/wrap_test.json'))
+ex = json.load(open('/tmp/wrap_export.json'))
+assert re.fullmatch(r'[0-9a-f]{64}', d['log_boot_genesis_hash']), 'bad log_boot_genesis_hash'
+assert isinstance(d['log_boot_epoch_unix'], int), 'log_boot_epoch_unix must be an int'
+assert d['log_boot_genesis_hash'] == ex['boot_genesis_hash'], 'roster boot must match export boot'
+assert d['log_boot_epoch_unix'] == ex['boot_epoch_unix'], 'roster epoch must match export epoch'
+assert d['roster_digest_sha256'] == os.environ['DIGEST3'], 'digest must not rotate on boot-field addition'
+assert 'log_boot_epoch_unix' in d['how_to_verify'], 'roster verify docs must describe restart vs tampering'
 print('PASS')
 PYEOF
 curl -s "$BASE/v1/challenge-log" -o /tmp/wrap_test.json

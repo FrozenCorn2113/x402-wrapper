@@ -304,6 +304,15 @@ def roster_report() -> dict:
         _head_id, _head_hash = _log_tail[-1].get("id"), _log_tail[-1].get("entry_hash")
     else:
         _head_id, _head_hash = None, challenge_log._GENESIS
+    # Boot epoch (clawdsmith 2026-09-24): same ephemeral-store reality as the
+    # log itself — a restart wipes the holding records too (announced seeds
+    # are re-seeded from the published evidence quotes). The boot epoch lets
+    # a reviewer distinguish "registration vanished because the server
+    # restarted" (newer epoch) from "registration silently removed" (same
+    # epoch). These fields are outside the digest: the digest covers the
+    # holder SET only.
+    _log_all = challenge_log.read_all(1000)
+    _boot = _log_all[0] if _log_all else None
     return {
         "format": "x402wrapper-holder-roster",
         "format_version": 1,
@@ -313,6 +322,8 @@ def roster_report() -> dict:
         "holding_count": sum(1 for h in holders if h.get("status") == "holding"),
         "challenge_log_head_id": _head_id,
         "challenge_log_head_hash": _head_hash,
+        "log_boot_genesis_hash": _boot["entry_hash"] if _boot else challenge_log._GENESIS,
+        "log_boot_epoch_unix": _boot["submitted_at_unix"] if _boot else None,
         "roster_digest_sha256": _digest(digest_holders),
         "register": "POST /v1/holder-roster",
         "export": "GET /v1/challenge-log/export",
@@ -349,7 +360,18 @@ def roster_report() -> dict:
             "Read the head_hash / an entry_hash from the export and cite it. "
             "The genesis entry is operator-attributed and is not an "
             "independent challenge; citing it anchors you to what the "
-            "server showed at boot."
+            "server showed at boot. "
+            "8. Durability: holding records are committed in the hash-chained "
+            "checkpoint AND kept as server-side roster state, but that "
+            "state is ephemeral instance storage (free tier) — a restart "
+            "wipes holding records while announced seeds are re-seeded "
+            "from the published evidence quotes. A holder whose "
+            "registration vanished after a restart re-registers citing the "
+            "new head; their own kept export proves the earlier "
+            "registration existed. log_boot_genesis_hash / "
+            "log_boot_epoch_unix identify the epoch: a vanished record "
+            "under a newer epoch is a restart (expected); under the same "
+            "epoch it would be tampering."
         ),
         "honesty": (
             "'holding' proves the registrant read a real head hash, not "

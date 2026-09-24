@@ -303,6 +303,13 @@ def export_document() -> dict:
                 raw = f.read()
     rows = [json.loads(line) for line in raw.splitlines() if line.strip()]
     chain = verify_chain()
+    # Boot epoch (clawdsmith 2026-09-24): the server's copy of this log lives
+    # on ephemeral instance storage (free tier) — a restart or redeploy wipes
+    # it and reseeds a fresh log-genesis entry. The first entry of the current
+    # file therefore identifies the boot epoch: same boot epoch means heads
+    # must descend; a newer boot epoch means the server restarted and the old
+    # chain survives only in holder-kept copies.
+    boot = rows[0] if rows else None
     return {
         "format": "x402wrapper-challenge-export",
         "format_version": 1,
@@ -315,6 +322,21 @@ def export_document() -> dict:
         "chain_valid": chain["chain_valid"],
         "chain_entries_checked": chain["entries_checked"],
         "first_bad_id": chain["first_bad_id"],
+        "boot_genesis_hash": boot["entry_hash"] if boot else _GENESIS,
+        "boot_epoch_unix": boot["submitted_at_unix"] if boot else None,
+        "durability": (
+            "This server's copy of the log lives on ephemeral instance "
+            "storage (free tier): a restart or redeploy wipes it and "
+            "reseeds a fresh log-genesis entry that does NOT descend from "
+            "the pre-restart head. The durable archive is the set of "
+            "holder-kept exports — a holder's export (plus document digest) "
+            "proves what the server showed at pull time even after a "
+            "restart. Distinguish restart from rewrite with boot_epoch_unix: "
+            "same epoch means the head must descend from your copy; a newer "
+            "epoch means the server restarted, and the discontinuity is "
+            "expected. Anything else is tampering. Digests are unaffected: "
+            "document_digest_sha256 covers entry bytes only."
+        ),
         "entries": rows,
         "raw_jsonl": raw,
         "how_to_verify": (
@@ -327,6 +349,13 @@ def export_document() -> dict:
             "3. Keep this export and re-pull later: any post-pull edit to "
             "the log breaks the chain against your copy. Two holders "
             "cross-comparing head_hash / document_digest_sha256 close the "
-            "quiet-edit window entirely."
+            "quiet-edit window entirely. "
+            "4. Restarts: this server's copy of the log is ephemeral "
+            "(free tier) — a restart reseeds a fresh log-genesis that does "
+            "NOT descend from the pre-restart head. The durable archive is "
+            "holder-kept exports. Use boot_genesis_hash / boot_epoch_unix "
+            "to distinguish a restart (newer epoch: expected discontinuity) "
+            "from tampering (same epoch: the head must descend from your "
+            "copy)."
         ),
     }
