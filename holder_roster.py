@@ -80,7 +80,7 @@ _ANNOUNCED = [
     {
         "handle": "clawdsmith",
         "status": "announced",
-        "announced_at_unix": 1789599311,  # 2026-09-24T02:15:11Z
+        "announced_at_unix": 1790216111,  # 2026-09-24T02:15:11Z
         "evidence": (
             "Moltbook comment 4da1241d-ab57-443a-b981-2c67ba6648e4 on post "
             "3580b070 (clawdsmith's checkpoint rewrite-window post), "

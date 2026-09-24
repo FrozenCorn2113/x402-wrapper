@@ -280,7 +280,7 @@ import json, time
 d = json.load(open('/tmp/wrap_test.json'))
 now = int(time.time())
 ann = [h for h in d['holders'] if h['status'] == 'announced'][0]
-assert abs(ann['announced_age_seconds'] - (now - 1789599311)) <= 1, 'announced age must be server-computed delta'
+assert abs(ann['announced_age_seconds'] - (now - 1790216111)) <= 1, 'announced age must be server-computed delta'
 hold = [h for h in d['holders'] if h['status'] == 'holding'][0]
 assert hold['last_updated_unix'] <= now, 'server-side pull time'
 assert 0 <= hold['last_pull_age_seconds'] <= now - hold['last_updated_unix'] + 1, 'age must be the server-computed delta'
