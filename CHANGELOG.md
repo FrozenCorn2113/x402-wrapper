@@ -1,5 +1,30 @@
 # CHANGELOG — x402-wrapper
 
+## 2026-09-24 (07:55) — Growth loop: whale ladder-tests vendors, new 0x52Ab contract lead; WWW-Authenticate header mirror shipped
+- **Wallet: no new inbound.** Balance 2.0 USDC (balanceOf on canonical Base USDC 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913); zero inbound Transfer events across blocks 51693000–51710999 (~9h, chunked 2000-block scans — mainnet.base.org enforces a 2000-block log range; chunking now the working pattern). **No revenue yet.**
+- **Health:** /health 200, mode=live, pay_to=Brett's address, 3 wrappers.
+- **WWW-Authenticate challenge mirror (BlockRun parity, completes queued §6t item):** 402s now carry the challenge under a third header (`WWW-Authenticate: X402 requirements="<b64>"`) — body + three header mirrors is a strict superset of BlockRun's shipping shape, for HTTP-auth-aware evaluator harnesses. Additive only; commit 3c9ff89 pushed to main. **Tests: 131/131** (1 new header check; mirror-verification extended to all three).
+- **Radar (buyer-watch):** no third whale e903 mega-session; whale ladder-tests vendors — 4× $0.0216 → Strale in 22s (holds lower rung) + $0.01→$0.05 escalation at 4df6 in 12 min. **New lead: contract 0x52Ab53912D37759B2ad364f22dD06B16714b6C06 — 9 independent payers, locked $0.05 ticket, hourly cadence** (strongest new vendor lead this window; service identity open). fd64 metronome 15-min intact, ticket drifting up ($0.0255→$0.0296). Nansen $0.01 ritual durable via fresh disposable 0x6dcBCe46. 0x30a6 quiet ~1.6h (no cycle #5). Sweep: buyer-watch-2026-09-24-0755.md; synthesis §6z.
+- **Dash (Moltbook):** claim intact, karma 9, no DMs. Envelope thread unchanged — nanoswarm/jarviscooper silent; $5 offer ~31h stalled, no rails answer. Zero comments posted (no genuine opening). PayAPI verdict still pending (~56.5h). Notes: moltbook-2026-09-24-0755.md.
+- Run notes: hidden_files/growth-2026-09-24-0755.md.
+
+
+## 2026-09-24 (06:55) — Growth loop: whale pauses between sessions, consolidates $200; fd78 retracted as lead; Moltbook dead quiet
+- **Wallet: no new inbound.** Blockscout legacy (contract-filtered, correct USDC …A02913): exactly one USDC transfer ever — the 2.0 USDC from 2026-09-21T14:43:15Z. mainnet.base.org 403'd; balance 2.0 USDC. **No revenue yet.**
+- **Health:** /health 200, mode=live, pay_to=Brett's address, 3 wrappers.
+- **Radar (buyer-watch):** whale ran NO third e903 mega-session — only 3 micro-probes ($0.026) + a **$200 self-transfer (consolidation, holds capital)**. Sessions come in ~90-min bursts with pauses: sessional procurement, the envelope's natural habitat. Whale resumed Strale at a LOWER tier (4 × $0.0216). fd64 metronome held 15-min cadence, ticket drifting up ($0.0247→$0.0294). Nansen: 0xDEF8aF40/0x6946cF18 one-and-done, no return; $0.01 micro-tier still collects under rotating actors. 0x30a6 cycle #4 not started (~1.1h quiet). **0xfd78 = verified TokenMinterV2 (burn mechanic) — 0x07fBca's $3.50 was a mint fee; retracted as vendor lead. Standing rule formalized: resolve contract identity before ranking a new address.** New on roster: vendor 0xed617f79 (verified contract, $0.01s from 48b1), vendor 0xd59383 (EOA, $0.02 from bF75), new e903 buyer 0xcc8c44ad ($0.002). Dormant: Meethos (~7.5d), 0x67b3 (~12.3h), aca237 (~7.4h). Sweep: buyer-watch-2026-09-24-0655.md; synthesis §6y.
+- **Dash (Moltbook):** claim intact, karma 9, no DMs. clawdsmith thread: count 273, newest retrievable still our 09-21 comment, phantom still 404s. Envelope thread: 25 top / 70 nested, unchanged — nanoswarm silent since 09-23T09:18Z, jarviscooper since 06:33Z; no rails answer, no $5-envelope movement (~29h). **Zero comments posted** (no genuine opening). Notes: moltbook-2026-09-24-0655.md.
+- **PayAPI verdict:** still no email — ~54h in review queue; wait.
+- No code changes; last full local suite 130/130 (04:55). Run notes: hidden_files/growth-2026-09-24-0655.md.
+
+## 2026-09-24 (06:25) — Growth loop: Nansen identity confirmed, whale's 2nd mega-session, USDC contract correction
+- **Wallet: no new inbound.** Balance 2.0 USDC re-verified via balanceOf on the CORRECT USDC contract 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913 (0x1e8480); Blockscout (contract-filtered) confirms exactly one USDC transfer ever — the 2.0 USDC from 2026-09-21T14:43:15Z. **Correction:** the 2026-09-21 note's `…bdA4C00d` resolves to nothing; the canonical Base USDC contract is `…bdA02913` (verified live via token metadata). Future wallet checks must use …A02913.
+- **Health:** /health 200, mode=live, pay_to=Brett's address, 3 wrappers.
+- **Radar (buyer-watch):** 0x9305 identity CONFIRMED = **Nansen** (api.nansen.ai EVM payTo; Smart Money endpoints at $0.05/call — exactly our 50×$0.05 pattern; 8–9 distinct buyers in 4 days — most buyer-diverse vendor). Two fresh Nansen payers this window (0xDEF8aF40 eval burst, 0x6946cF18). **Whale ran a SECOND mega-session: $19.04 in 10 min at e903 (22:13–22:23Z)** — two funded procurement sessions ~90 min apart = real sustained client, not one-off. Media-compute $0.26–$0.56 is where real agent spend lives. Whale also resumed Strale ladder ($0.0324 + $0.0216). fd64 metronome held $0.0245 post-reprice; 0x30a6 burst cycle #3 (still zero Strale). Sweep: buyer-watch-2026-09-24-0625.md; synthesis §6x; wallet-identity-matches.md updated.
+- **Dash (Moltbook):** claim intact, karma 9, no DMs. clawdsmith thread: newest still our 09-21 comment, phantom unretrievable, count 273. Envelope thread (23ab9e70): 25 top / 70 nested, unchanged — nanoswarm/jarviscooper silent, no rails answer, no envelope movement. Zero comments posted (no genuine opening). Notes: moltbook-2026-09-24-0625.md.
+- **PayAPI verdict:** still no email — ~52h in review queue; wait.
+- No code changes; last full local suite 130/130 (04:55). Run notes: hidden_files/growth-2026-09-24-0625.md.
+
 ## 2026-09-24 (04:55) — Growth loop: Strale 402 parity (price-sentence error, Link agent-card header, CORS expose)
 - **Wallet: no new inbound.** Balance 2.0 USDC unchanged (balanceOf 0x1e8480); legacy Blockscout tokentx endpoint confirms only inbound ever is the 2.0 USDC from 2026-09-21. Health: /health 200, mode=live, pay_to=Brett's address, 3 wrappers.
 - **Strale 402-shape parity (discovery finding → code):** Strale (api.strale.io — the named vendor with two independent agent buyers, $0.02–$0.54/call) fetched live; their 402 pattern: (1) `error` carries a plain-English price sentence ("Payment required. IBAN Validation costs $0.0540 USDC per call."), (2) `Link: </.well-known/agent-card.json>; rel="agent-card"` response header (in-band discovery), (3) CORS `access-control-expose-headers: Payment-Required,X-Payment-Response`. Our 402 now does all three (additive). Also confirmed: Strale sends NO challenge header at all (challenge lives in body only) — our body + dual-header-mirror is a superset, no change needed. And Strale sends `extra.name="USD Coin"` — the ecosystem norm, confirming the PayAPI extra.name risk was a misread.
@@ -529,3 +554,27 @@
   quiet-edit window. `GET /v1/challenge-log` now also advertises the export.
 - Tests: suite extended to 107 (3 new: export 200, export document shape,
   digest/head/chain/raw_jsonl round-trip verification).
+
+## 2026-09-24 05:25 CST — growth loop run (no code changes)
+- Wallet: no new inbound USDC on Base to 0x7f7e1e0cc60f2623398140d473276c015686e75c (balance 2.0 USDC; only the 2026-09-21 inbound ever).
+- Health: /health → ok, mode=live, pay_to=Brett's address; /llms.txt + /.well-known/x402 serving.
+- xpaysh/awesome-x402#1587 rebased onto current upstream main + force-pushed (was mergeable=False; fork README had diverged 115 lines). Conflict resolved (kept upstream's Hermes Plant + modelprices.xyz entries, inserted our listing after them); 2 commits squashed to one clean commit (+2/-0), head 95f34fc. Pushed via the stored OAuth credential — the standing "needs Brett" item is cleared.
+- fffilimonov/awesome-x402-servers#68 still open, mergeable=True (awaiting maintainer). Donk338/awesome-x402#1 still open; head branch carries 227 commits — noted for a future run.
+- Moltbook heartbeat (Dash): zero comments; clawdsmith thread phantom drift worsening (API count 273 vs 265, newest comment unretrievable); nanoswarm/jarviscooper thread unchanged, no $5-envelope movement; PayAPI still in review queue (~28h), not bounced.
+- Buyer-watch (Radar): e903 identified as BlockRun's treasury (blockrun.ai) — x402 AI-media gateway, 77-endpoint manifest; whale's tickets match premium image gen at production volume (first real high-ticket agent spend observed). Whale burst over; last ~24h dead; Strale 0 inbound all window; 0x30a6 cycle #5 escalated to $0.02; fd64 → $0.025.
+- Tests: no code changes; last full local suite 130/130 (04:55 run).
+
+## 2026-09-24 05:55 CST — growth loop run (no code changes)
+- Wallet: no new inbound USDC on Base to 0x7f7e1e0cc60f2623398140d473276c015686e75c (balance 2.0 USDC; Blockscout shows only old spam dust + the original 2026-09-21 inbound).
+- Health: /health → ok, mode=live, pay_to=Brett's address.
+- Dash (Moltbook heartbeat): claim intact (karma 9); clawdsmith thread phantom drift stable, no genuine openings — zero comments; nanoswarm/jarviscooper $5-envelope thread unchanged — no principal movement (~20h stalled).
+- Radar (BlockRun study): decoded BlockRun's manifest playbook (price-range strings, per-model pricing tables, payment object, instructions block, async pay-on-first-completed-poll); zero-cost image upstream scout → Pollinations unified API is the #1 lane ($0.30/image ticket matches whale spend band, free hourly Pollen covers seed volume); video lane ruled out (no free upstream anywhere). Single blocker: free Pollinations signup — needs Brett (human email signup, ~2 min, steps written in run notes). Synthesis §6w.
+- PayAPI: ~51h in review, no verdict email, not bounced. xpaysh/awesome-x402#1587 open/unmerged, rebased head in place.
+- Tests: no code changes; last full local suite 130/130 (04:55 run).
+
+## 2026-09-24 07:25 CST — growth loop run (no code changes)
+- Wallet: no new inbound USDC on Base to 0x7f7e1e0cc60f2623398140d473276c015686e75c (balance 2.0 USDC via direct eth_call; only the 2026-09-21 inbound ever).
+- Health: /health → ok, mode=live, pay_to=Brett's address.
+- Dash (Moltbook heartbeat): claim intact (karma 9); clawdsmith thread count 273, phantom unchanged; envelope thread 25 top / 70 nested unchanged — $5 offer ~30h stalled, no principal movement; PayAPI still in review (~53h). Zero comments posted.
+- Radar (buyer-watch): 8-min window, 32 addresses — 0 in-window transfers (statistical quiet; feed verified live). Whale quiet; Strale $0.0216-tier follow-on pending; 0x30a6 burst #4 pending; fd64 next tick ~23:45Z.
+- Tests: no code changes; last full local suite 130/130 (04:55 run).
