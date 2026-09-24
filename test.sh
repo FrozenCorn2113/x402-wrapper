@@ -442,6 +442,33 @@ assert 'tx_hash' in c, 'credit row missing tx_hash'
 print('PASS: credit row carries full on-chain provenance')
 PYEOF
 [ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: credit provenance"; fail=$((fail+1)); }
+# Mandate-hash rule (2026-09-25, neodelvorn's void-on-context-change design):
+# every credit row binds to the mandate terms true at credit time; the
+# principal recomputes mandate_hash() over the current mandate and a
+# mismatch voids the row's context. Statement annotates mandate_status.
+$PY - <<'PYEOF'
+import json, hashlib, sys
+sys.path.insert(0, '.')
+import envelopes
+d = json.load(open('/tmp/wrap_test.json'))
+hist = d['credit_history']
+c = hist[0]
+assert c['mandate_status'] == 'bound', f"initial credit must be bound, got {c['mandate_status']}"
+assert c['mandate_hash'].startswith('sha256:'), 'mandate_hash format'
+assert c['mandate_schema_version'] == '1', 'mandate schema version'
+mand = dict(c['mandate'])
+canonical = json.dumps(mand, sort_keys=True, separators=(',', ':'))
+expect = 'sha256:' + hashlib.sha256(canonical.encode()).hexdigest()
+assert c['mandate_hash'] == expect, 'mandate_hash must be deterministic sha256 of canonical mandate'
+assert d['mandate_hash'] == expect, 'statement mandate_hash must equal row hash (mandate unchanged)'
+# verify_credit_mandate: tamper with the mandate and the row must read void.
+env = dict(mand); tampered = dict(env); tampered['per_call_cap_atomic'] = 1
+assert envelopes.verify_credit_mandate(tampered, c) == 'void', 'changed mandate must void the row'
+assert envelopes.verify_credit_mandate(env, c) == 'bound', 'unchanged mandate must bind'
+assert envelopes.verify_credit_mandate(env, {}) == 'legacy', 'pre-hash rows read legacy'
+print('PASS: mandate_hash binds credit to mandate terms; void-on-change verified')
+PYEOF
+[ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: mandate_hash bind/void"; fail=$((fail+1)); }
 grep -q '"settled_rail": *"base-usdc"' /tmp/wrap_test.json && grep -q '"buyer_rail": *"base-usdc"' /tmp/wrap_test.json && echo "PASS: receipt lines carry settled_rail + buyer_rail" && pass=$((pass+1)) || { echo "FAIL: receipt rail fields"; fail=$((fail+1)); }
 check "catalog advertises envelope_support" 200 "$BASE/v1"
 grep -q '"envelope_support": *true' /tmp/wrap_test.json && echo "PASS: envelope_support:true in /v1" && pass=$((pass+1)) || { echo "FAIL: envelope_support"; fail=$((fail+1)); }

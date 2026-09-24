@@ -39,9 +39,23 @@ so a principal can reconcile every credit against Base directly instead of
 taking the operator's word. The operator remains in the credit path in v1
 (manual on-chain verification); the statement layer makes every credit
 observable, which is what keeps the bound honest.
+
+MANDATE-HASH RULE (2026-09-25, from neodelvorn's void-on-context-change
+feedback): a credit's number and provenance still don't say under what TERMS
+the credit was taken. Every credit row now also carries a mandate_hash —
+sha256 over the canonical mandate fields true at credit time (label/scope,
+per-call max, allowlist, velocity, reason-required, rail, schema version).
+The principal recomputes the hash over the CURRENT mandate; a mismatch voids
+the credit's context. The store is only the messenger — it cannot soften a
+changed mandate into a valid-looking row. Honest gaps, stated publicly:
+row deletion still needs sequence continuity as a separate control; v1 has
+no spend keys (operator-issued mandate, disclosed); Base USDC has no memo,
+so on-chain binding rides an EIP-712 attestation in v2 (falsifiable claim,
+not trustless); task_scope drift semantics are an open design question.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -77,6 +91,55 @@ _lock = threading.RLock()
 _envelopes: dict[str, dict] | None = None
 # Per-envelope sliding velocity windows (process-local, like core._hits).
 _velocity: dict[str, list[float]] = {}
+
+# MANDATE-HASH DESIGN (2026-09-25, from neodelvorn's void-on-context-change
+# feedback on Moltbook): don't trust the log store for mandate integrity.
+# Every credit row carries a mandate_hash — sha256 over the canonical mandate
+# fields true at credit time (scope/label, per-call max, allowlist, velocity,
+# reason-required, rail, schema version). The principal recomputes the hash
+# over the CURRENT mandate; a mismatch means the credit's context changed and
+# the credit is VOID — our store is only the messenger. Disclosing the hole
+# beats a soft field that looks like control and is not.
+# Honest gaps (stated publicly to neodelvorn 2026-09-25): row deletion still
+# needs sequence continuity as a separate control; v1 has no spend keys, so
+# there is no spend_key_id input (operator-issued mandate, disclosed); Base
+# USDC has no memo, so on-chain binding rides an EIP-712 attestation in v2
+# (falsifiable claim, not trustless). task_scope drift semantics are an open
+# question back with neodelvorn.
+MANDATE_SCHEMA_VERSION = "1"
+
+
+def mandate_snapshot(env: dict) -> dict:
+    """Canonical mandate fields true right now. This is the input to the
+    mandate hash a principal recomputes to detect void-on-context-change."""
+    return {
+        "principal_wallet": env.get("principal_wallet"),
+        "label": env.get("label"),
+        "per_call_cap_atomic": env.get("per_call_cap_atomic"),
+        "allowed_paths": sorted(env.get("allowed_paths") or []),
+        "velocity_per_min": env.get("velocity_per_min"),
+        "reason_required": bool(env.get("reason_required")),
+        "rail": env.get("funded_rail", FUNDED_RAIL),
+        "mandate_schema_version": MANDATE_SCHEMA_VERSION,
+    }
+
+
+def mandate_hash(snapshot: dict) -> str:
+    """sha256 fingerprint of a mandate snapshot, canonicalized so the
+    principal gets the same bytes we did."""
+    canonical = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def verify_credit_mandate(env: dict, credit: dict) -> str:
+    """Recompute the mandate hash for a credit row against the CURRENT
+    mandate. 'bound' = context unchanged, 'void' = mandate changed since the
+    credit landed (spend under it must not be treated as authorized).
+    'legacy' = row predates mandate hashing (no hash recorded)."""
+    recorded = credit.get("mandate_hash")
+    if not recorded:
+        return "legacy"
+    return "bound" if recorded == mandate_hash(mandate_snapshot(env)) else "void"
 
 
 def usd_to_atomic(usd: float) -> int:
@@ -195,8 +258,14 @@ def open_envelope(
         "last_topup_at": now_iso(),
         "last_topup_tx": None,
         # Initial operator-attested credit, observable like any other.
-        "credits": [_credit_entry(None, usd_to_atomic(amount))],
+        "credits": [],
     }
+    # The initial credit is bound to the exact mandate terms at open time
+    # (neodelvorn's mandate_hash design): the snapshot must come from the
+    # finished record, so it is appended after the record is built.
+    record["credits"] = [
+        _credit_entry(None, usd_to_atomic(amount), mandate_snapshot(record))
+    ]
     with _lock:
         envs = _load()
         while envelope_id in envs:  # astronomically unlikely, but free
@@ -207,9 +276,11 @@ def open_envelope(
     return record, None
 
 
-def _credit_entry(tx_hash: object, atomic: int) -> dict:
+def _credit_entry(tx_hash: object, atomic: int, mandate: dict) -> dict:
     """One observable credit row: every credit carries its on-chain
-    provenance so a principal can reconcile against Base directly.
+    provenance so a principal can reconcile against Base directly, AND a
+    mandate_hash binding the credit to the exact mandate terms true at
+    credit time (neodelvorn's void-on-context-change design, 2026-09-25).
     The operator attests the credit in v1 (manual read-only on-chain
     verification); the tx hash makes the claim independently checkable.
     """
@@ -229,6 +300,13 @@ def _credit_entry(tx_hash: object, atomic: int) -> dict:
             "native-USDC transfer; no tx hash recorded — ask the operator "
             "for the provenance or decline this credit"
         ),
+        # Mandate binding: the principal recomputes mandate_hash() over the
+        # current mandate; a mismatch voids this credit's context.
+        "mandate_schema_version": mandate.get(
+            "mandate_schema_version", MANDATE_SCHEMA_VERSION
+        ),
+        "mandate": mandate,
+        "mandate_hash": mandate_hash(mandate),
     }
 
 
@@ -267,7 +345,10 @@ def topup_envelope(
         # on-chain tx hash, amount, timestamp — appended to the envelope's
         # credit history AND the public receipt log, so a principal can
         # reconcile each credit against Base directly.
-        credit = _credit_entry(tx_hash, atomic)
+        # Mandate binding (2026-09-25, neodelvorn): the credit is hashed
+        # against the mandate true right now; a later mandate change voids
+        # this row's context on recompute.
+        credit = _credit_entry(tx_hash, atomic, mandate_snapshot(env))
         env.setdefault("credits", []).append(credit)
         _append_envelope_receipt_line(envelope_id, {
             "type": "credit",
@@ -277,6 +358,7 @@ def topup_envelope(
             "amount_usdc": credit["amount_usdc"],
             "rail": credit["rail"],
             "credited_by": credit["credited_by"],
+            "mandate_hash": credit["mandate_hash"],
             "verification": credit["verification"],
             "balance_after_atomic": env["balance_atomic"],
         })
@@ -451,6 +533,15 @@ def statement(envelope_id: str) -> dict | None:
                 receipts.append(json.loads(raw))
         except Exception:
             pass
+    # Mandate recompute-bind (2026-09-25, neodelvorn): each credit row is
+    # annotated with its status against the CURRENT mandate — 'bound' means
+    # the context is unchanged, 'void' means the mandate moved under it.
+    mandate = mandate_snapshot(env)
+    credits = []
+    for c in env.get("credits", []):
+        annotated = dict(c)
+        annotated["mandate_status"] = verify_credit_mandate(env, c)
+        credits.append(annotated)
     return {
         "envelope_id": env["id"],
         "principal_wallet": env["principal_wallet"],
@@ -466,11 +557,20 @@ def statement(envelope_id: str) -> dict | None:
             "reason_required": env["reason_required"],
         },
         "total_topped_up_atomic": env["total_topped_up_atomic"],
+        # The current mandate and its fingerprint: the principal recomputes
+        # mandate_hash over their own mandate terms and compares — that
+        # comparison, not our store, is what voids stale credits.
+        "mandate": mandate,
+        "mandate_hash": mandate_hash(mandate),
         # Credit-observability rule (2026-09-24): full credit history on the
         # public statement — every credit carries its on-chain tx hash so a
         # principal reconciles against Base directly instead of trusting
         # the operator's assertion.
-        "credit_history": env.get("credits", []),
+        # Mandate-hash rule (2026-09-25, neodelvorn): each credit row also
+        # carries mandate_schema_version + mandate + mandate_hash, and is
+        # annotated with mandate_status (bound/void/legacy) recomputed
+        # against the current mandate.
+        "credit_history": credits,
         "created_at": env["created_at"],
         "updated_at": env["updated_at"],
         "receipts": receipts,

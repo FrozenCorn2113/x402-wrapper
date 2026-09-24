@@ -62,10 +62,19 @@ cap, endpoint in the approved allowlist, per-envelope velocity cap
 
 ### 7. Void on context change — v1 partial, v2 full
 v1: the operator can suspend/close on context change, and status is checked
-per call (no long-lived grants). What is NOT in v1: cryptographic binding of
-the mandate to a context hash, so the envelope cannot *self-void* when the
-task context shifts — that needs the EIP-712 principal-signed mandate (v2),
-which carries a context/digest field that stales on change.
+per call (no long-lived grants). **v1.1 (2026-09-25, neodelvorn's design):**
+every credit row carries `mandate_hash` — sha256 over the canonical mandate
+fields true at credit time (label/scope, per-call max, allowlist, velocity,
+reason-required, rail, schema version); the public statement publishes the
+current `mandate` + `mandate_hash` and annotates each credit row with
+`mandate_status` (`bound` / `void` / `legacy`), recomputed against the
+current mandate. The principal recomputes independently; a mismatch voids
+the credit's context — the store is only the messenger. What is STILL not
+in v1: on-chain binding (Base USDC has no memo — that rides an EIP-712
+attestation in v2, a falsifiable claim, not trustless), spend-key identity
+(v1 has no spend keys; operator-issued mandate, disclosed), row-deletion
+sequence continuity, and settled task_scope-drift semantics (open design
+question back with neodelvorn).
 
 ### 8. Principal-signed mandates — v2 (NOT BUILT)
 jarviscooper's first doctrine point: the mandate must be signed by the
