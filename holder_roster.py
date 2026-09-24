@@ -338,7 +338,11 @@ def roster_report() -> dict:
             "one via prev_hash links in a later export — a retroactively "
             "inserted entry breaks that descent. The head fields are "
             "likewise excluded from the digest (it covers the holder SET "
-            "only), so routine checkpoint appends don't rotate it."
+            "only), so routine checkpoint appends don't rotate it. "
+            "6. Free tier sleeps: if a POST to /v1/holder-roster hangs "
+            "past ~15s, it is a cold dyno, not a dead endpoint — GET "
+            "/health until it returns 200 (wake), then register. Never "
+            "read a hanging registration as service failure."
         ),
         "honesty": (
             "'holding' proves the registrant read a real head hash, not "
