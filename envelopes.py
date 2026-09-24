@@ -29,6 +29,16 @@ jarviscooper's rule is load-bearing in try_spend(): ANY ambiguity — unknown
 id, suspended/closed status, cap exceeded, short balance, velocity tripped,
 missing or malformed reason — refuses with ENVELOPE_DECLINED (HTTP 402) and
 NEVER decrements, charges, or forwards.
+
+CREDIT-OBSERVABILITY RULE (2026-09-24, from jarviscooper's buyer-side
+feedback): "the only bound that reads from the buyer seat is one you can
+watch and empty on demand" — so no credit may enter the ledger as a bare
+number. Every credit carries its on-chain provenance (tx hash, amount,
+timestamp, rail) and the public statement exposes the FULL credit history,
+so a principal can reconcile every credit against Base directly instead of
+taking the operator's word. The operator remains in the credit path in v1
+(manual on-chain verification); the statement layer makes every credit
+observable, which is what keeps the bound honest.
 """
 from __future__ import annotations
 
@@ -184,6 +194,8 @@ def open_envelope(
         "total_topped_up_atomic": usd_to_atomic(amount),
         "last_topup_at": now_iso(),
         "last_topup_tx": None,
+        # Initial operator-attested credit, observable like any other.
+        "credits": [_credit_entry(None, usd_to_atomic(amount))],
     }
     with _lock:
         envs = _load()
@@ -193,6 +205,31 @@ def open_envelope(
         envs[envelope_id] = record
         _save()
     return record, None
+
+
+def _credit_entry(tx_hash: object, atomic: int) -> dict:
+    """One observable credit row: every credit carries its on-chain
+    provenance so a principal can reconcile against Base directly.
+    The operator attests the credit in v1 (manual read-only on-chain
+    verification); the tx hash makes the claim independently checkable.
+    """
+    tx = str(tx_hash or "")[:100] or None
+    return {
+        "ts": now_iso(),
+        "tx_hash": tx,
+        "amount_atomic": atomic,
+        "amount_usdc": f"{atomic / 10**USDC_DECIMALS:.6f}",
+        "rail": FUNDED_RAIL,
+        "credited_by": "operator",
+        "verification": (
+            "manual read-only on-chain verification of the principal's "
+            "native-USDC transfer; independently checkable at "
+            f"https://basescan.org/tx/{tx}" if tx else
+            "manual read-only on-chain verification of the principal's "
+            "native-USDC transfer; no tx hash recorded — ask the operator "
+            "for the provenance or decline this credit"
+        ),
+    }
 
 
 def get_envelope(envelope_id: str) -> dict | None:
@@ -226,6 +263,23 @@ def topup_envelope(
         env["last_topup_at"] = now_iso()
         env["last_topup_tx"] = str(tx_hash or "")[:100] or None
         env["updated_at"] = now_iso()
+        # Credit-observability rule: every credit is an observable row —
+        # on-chain tx hash, amount, timestamp — appended to the envelope's
+        # credit history AND the public receipt log, so a principal can
+        # reconcile each credit against Base directly.
+        credit = _credit_entry(tx_hash, atomic)
+        env.setdefault("credits", []).append(credit)
+        _append_envelope_receipt_line(envelope_id, {
+            "type": "credit",
+            "ts": credit["ts"],
+            "tx_hash": credit["tx_hash"],
+            "amount_atomic": atomic,
+            "amount_usdc": credit["amount_usdc"],
+            "rail": credit["rail"],
+            "credited_by": credit["credited_by"],
+            "verification": credit["verification"],
+            "balance_after_atomic": env["balance_atomic"],
+        })
         _save()
         return dict(env), None
 
@@ -412,6 +466,11 @@ def statement(envelope_id: str) -> dict | None:
             "reason_required": env["reason_required"],
         },
         "total_topped_up_atomic": env["total_topped_up_atomic"],
+        # Credit-observability rule (2026-09-24): full credit history on the
+        # public statement — every credit carries its on-chain tx hash so a
+        # principal reconciles against Base directly instead of trusting
+        # the operator's assertion.
+        "credit_history": env.get("credits", []),
         "created_at": env["created_at"],
         "updated_at": env["updated_at"],
         "receipts": receipts,

@@ -245,6 +245,22 @@ check "statement -> 200" 200 "$BASE/v1/envelopes/$ENV_ID"
 grep -q '"balance_atomic": *4999900' /tmp/wrap_test.json && grep -q '"per_call_cap_atomic": *1000' /tmp/wrap_test.json && grep -q '"reason_required": *false' /tmp/wrap_test.json && echo "PASS: statement balance + policy" && pass=$((pass+1)) || { echo "FAIL: statement contents"; fail=$((fail+1)); }
 grep -q '"call_id"' /tmp/wrap_test.json && echo "PASS: statement includes receipt lines" && pass=$((pass+1)) || { echo "FAIL: statement receipts"; fail=$((fail+1)); }
 grep -q '"funded_rail": *"base-usdc"' /tmp/wrap_test.json && echo "PASS: statement publishes funded_rail" && pass=$((pass+1)) || { echo "FAIL: statement funded_rail"; fail=$((fail+1)); }
+# Credit-observability rule (2026-09-24, jarviscooper's buyer-side feedback):
+# every credit is an observable row with on-chain provenance, exposed on the
+# public statement so a principal reconciles against Base directly.
+grep -q '"credit_history"' /tmp/wrap_test.json && echo "PASS: statement exposes credit_history" && pass=$((pass+1)) || { echo "FAIL: statement credit_history"; fail=$((fail+1)); }
+$PY - <<'PYEOF'
+import json
+d = json.load(open('/tmp/wrap_test.json'))
+hist = d['credit_history']
+assert isinstance(hist, list) and len(hist) >= 1, 'credit_history must list initial credit'
+c = hist[0]
+assert c['amount_atomic'] > 0, 'credit amount must be > 0'
+assert 'amount_usdc' in c and 'ts' in c and 'rail' in c and 'credited_by' in c and 'verification' in c, 'credit row missing provenance fields'
+assert 'tx_hash' in c, 'credit row missing tx_hash'
+print('PASS: credit row carries full on-chain provenance')
+PYEOF
+[ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: credit provenance"; fail=$((fail+1)); }
 grep -q '"settled_rail": *"base-usdc"' /tmp/wrap_test.json && grep -q '"buyer_rail": *"base-usdc"' /tmp/wrap_test.json && echo "PASS: receipt lines carry settled_rail + buyer_rail" && pass=$((pass+1)) || { echo "FAIL: receipt rail fields"; fail=$((fail+1)); }
 check "catalog advertises envelope_support" 200 "$BASE/v1"
 grep -q '"envelope_support": *true' /tmp/wrap_test.json && echo "PASS: envelope_support:true in /v1" && pass=$((pass+1)) || { echo "FAIL: envelope_support"; fail=$((fail+1)); }
@@ -294,6 +310,21 @@ grep -q 'ENVELOPE_DECLINED' /tmp/wrap_test.json && echo "PASS: insufficient bala
 check "topup -> 200" 200 -X POST -H "$AUTH" -H 'Content-Type: application/json' -d '{"usd_amount":0.001,"tx_hash":"0xmanualverification"}' "$BASE/v1/admin/envelopes/$ENV_DUST/topup"
 grep -q '"balance_atomic": *1000' /tmp/wrap_test.json && echo "PASS: topup recorded" && pass=$((pass+1)) || { echo "FAIL: topup"; fail=$((fail+1)); }
 check "post-topup drawdown -> 200" 200 -H "X-Envelope: $ENV_DUST" "$BASE/v1/echo?msg=env-dust-3"
+check "statement after topup -> 200" 200 "$BASE/v1/envelopes/$ENV_DUST"
+$PY - <<'PYEOF'
+import json
+d = json.load(open('/tmp/wrap_test.json'))
+hist = d['credit_history']
+assert len(hist) == 2, f'expect 2 credit rows (initial + topup), got {len(hist)}'
+top = hist[-1]
+assert top['tx_hash'] == '0xmanualverification', 'topup tx hash must be observable'
+assert top['amount_atomic'] == 1000, 'topup amount must be 1000 atomic'
+assert 'basescan.org/tx/0xmanualverification' in top['verification'], 'verification must link to chain'
+recs = d['receipts']
+assert any(r.get('type') == 'credit' for r in recs), 'credit must also appear in receipt lines'
+print('PASS: topup appended observable credit row (history + receipts)')
+PYEOF
+[ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: topup credit observability"; fail=$((fail+1)); }
 check "suspend -> 200" 200 -X POST -H "$AUTH" -H 'Content-Type: application/json' -d '{"status":"suspended"}' "$BASE/v1/admin/envelopes/$ENV_DUST/status"
 check "suspended drawdown -> 402" 402 -H "X-Envelope: $ENV_DUST" "$BASE/v1/echo?msg=env-dust-4"
 grep -q 'ENVELOPE_DECLINED' /tmp/wrap_test.json && echo "PASS: suspended envelope refused" && pass=$((pass+1)) || { echo "FAIL: suspended refusal"; fail=$((fail+1)); }

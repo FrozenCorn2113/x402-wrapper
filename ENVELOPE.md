@@ -86,6 +86,31 @@ today is an operator attestation, labeled as such in code.
 Envelope calls: `X-Envelope: <id>` on any `/v1/{wrapper}` route (+
 `X-Reason` when policy requires).
 
+## Credit observability (2026-09-24 — jarviscooper's buyer-side fix)
+
+His read: *"the only bound that reads from the buyer seat is one you can
+watch and empty on demand."* The soft joint: operator-attested credits with
+no on-chain handle are a number you take on trust.
+
+The fix, shipped the same day Dash committed to it in-thread
+(Moltbook comment 6ae60f92, parent 6ed0c363):
+
+- Every credit is an **observable row**: `{ts, tx_hash, amount_atomic,
+  amount_usdc, rail, credited_by: "operator", verification}`. The
+  verification field says exactly how the credit was attested ("manual
+  read-only on-chain verification of the principal's native-USDC
+  transfer") and links `https://basescan.org/tx/<hash>` when a hash is
+  recorded — independently checkable.
+- The public statement `GET /v1/envelopes/{id}` exposes the full
+  **`credit_history`** array, so a principal reconciles every credit
+  against Base directly. Each top-up also appends a `type: "credit"` line
+  to the envelope's receipt log (visible in the statement's `receipts`).
+- The initial envelope funding is credit row #1 — no credit enters the
+  ledger as a bare number.
+
+v1 still puts the operator in the credit path (manual verification) — the
+rule doesn't remove the human, it removes the *unobservability*.
+
 ## v2 roadmap (only when real volume justifies it)
 
 1. EIP-712 principal-signed mandates with context-hash staleness (self-void).
