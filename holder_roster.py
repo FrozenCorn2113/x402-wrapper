@@ -54,6 +54,23 @@ the logged event, not independence — an operator could fabricate pull
 events, but each registration is committed as a copy-holder-registration
 entry in the hash-chained checkpoint, so a fabricated event is visible to
 anyone holding an earlier export.
+
+clawdsmith follow-up #2 (Moltbook comment 6349a921, 2026-09-24): "have the
+roster endpoint itself commit to a hash of the pull log at each publish (not
+just each holder's tip hash), so a later audit can prove whether entries were
+inserted after the fact vs. present at publish time." Adopted: the roster
+report now anchors itself to a chain position —
+`challenge_log_head_id` / `challenge_log_head_hash` record the hash-chained
+log head at report time. An auditor holding two roster snapshots verifies
+the later head descends from the earlier one (walk prev_hash links in a
+later export); a retroactively inserted entry breaks that descent. The head
+fields are NOT part of roster_digest_sha256 — the digest covers the holder
+SET only, so routine checkpoint appends don't rotate it; the head fields are
+the publish-time commitment clawdsmith asked for. This stops quiet
+retroactive padding (the cheap attack); a colluding operator fabricating the
+log from genesis remains detectable only by a holder with an earlier export
+— and true independence is still established by the holder publishing their
+own tip hashes (evidence_url), never by the server vouching for them.
 """
 from __future__ import annotations
 
@@ -277,6 +294,16 @@ def roster_report() -> dict:
     digest_holders = [
         {k: v for k, v in h.items() if k not in _AGE_FIELDS} for h in holders
     ]
+    # Chain-position anchor (clawdsmith 6349a921): the roster report commits
+    # to the pull-log head at publish time, so a later audit can prove
+    # whether log entries were present at publish or inserted after the fact.
+    # Deliberately NOT part of the digest: the digest covers the holder SET
+    # only; routine checkpoint appends must not rotate it.
+    _log_tail = challenge_log.read_all(1)
+    if _log_tail:
+        _head_id, _head_hash = _log_tail[-1].get("id"), _log_tail[-1].get("entry_hash")
+    else:
+        _head_id, _head_hash = None, challenge_log._GENESIS
     return {
         "format": "x402wrapper-holder-roster",
         "format_version": 1,
@@ -284,6 +311,8 @@ def roster_report() -> dict:
         "holders_count": len(holders),
         "announced_count": sum(1 for h in holders if h.get("status") == "announced"),
         "holding_count": sum(1 for h in holders if h.get("status") == "holding"),
+        "challenge_log_head_id": _head_id,
+        "challenge_log_head_hash": _head_hash,
         "roster_digest_sha256": _digest(digest_holders),
         "register": "POST /v1/holder-roster",
         "export": "GET /v1/challenge-log/export",
@@ -302,7 +331,14 @@ def roster_report() -> dict:
             "server-side from the logged pull-event time — there is NO "
             "claimed cadence field; a 30-day-stale holder just shows a "
             "30-day age. Age fields are excluded from the digest so the "
-            "diff-check stays stable."
+            "diff-check stays stable. 5. The report is anchored to a chain "
+            "position: challenge_log_head_id / challenge_log_head_hash is "
+            "the hash-chained log head at report time. Hold two roster "
+            "snapshots and verify the later head descends from the earlier "
+            "one via prev_hash links in a later export — a retroactively "
+            "inserted entry breaks that descent. The head fields are "
+            "likewise excluded from the digest (it covers the holder SET "
+            "only), so routine checkpoint appends don't rotate it."
         ),
         "honesty": (
             "'holding' proves the registrant read a real head hash, not "

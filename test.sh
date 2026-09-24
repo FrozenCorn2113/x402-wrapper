@@ -300,8 +300,36 @@ hold = [h for h in d['holders'] if h['status'] == 'holding'][0]
 assert hold['last_pull_age_seconds'] >= 2, 'ages tick while digest stays put'
 print('PASS')
 PYEOF
+# clawdsmith's publish-time log commitment (6349a921): roster report anchors
+# to the challenge-log head; digest must ignore log-head movement (covers the
+# SET only), so routine checkpoint appends don't rotate it.
+check "roster report anchors to challenge-log head" 200 "$BASE/v1/holder-roster"
+export DIGEST3=$($PY -c "import json; print(json.load(open('/tmp/wrap_test.json'))['roster_digest_sha256'])")
+export HEADID3=$($PY -c "import json; print(json.load(open('/tmp/wrap_test.json'))['challenge_log_head_id'])")
+export HEADHASH3=$($PY -c "import json; print(json.load(open('/tmp/wrap_test.json'))['challenge_log_head_hash'])")
+curl -s "$BASE/v1/challenge-log/export" -o /tmp/wrap_export.json
+$PY - <<'PYEOF' && echo "PASS: roster head matches export head" && pass=$((pass+1)) || { echo "FAIL: roster head anchor"; fail=$((fail+1)); }
+import json, re
+d = json.load(open('/tmp/wrap_test.json'))
+ex = json.load(open('/tmp/wrap_export.json'))
+assert d['challenge_log_head_hash'] == ex['head_hash'], 'roster head must equal export head'
+assert isinstance(d['challenge_log_head_id'], int), 'head id must be an int'
+assert re.fullmatch(r'[0-9a-f]{64}', d['challenge_log_head_hash']), 'bad head hash'
+assert 'challenge_log_head_hash' in d['how_to_verify'], 'verify docs must describe the anchor'
+print('PASS')
+PYEOF
 # Re-register with a newer head hash: first_pull stays, last_tip moves.
 check "submit third challenge -> 201" 201 -X POST -H 'Content-Type: application/json' -d '{"challenged_by":"harness-ci v1","challenge_type":"identical-loop-harness","result":"pass","details":"run 3"}' "$BASE/v1/challenge-log"
+# The unrelated checkpoint append must advance the head WITHOUT rotating the digest.
+check "roster after unrelated log append -> 200" 200 "$BASE/v1/holder-roster"
+$PY - <<'PYEOF' && echo "PASS: digest stable under log-head movement, head advanced" && pass=$((pass+1)) || { echo "FAIL: digest vs head movement"; fail=$((fail+1)); }
+import json, os
+d = json.load(open('/tmp/wrap_test.json'))
+assert d['roster_digest_sha256'] == os.environ['DIGEST3'], 'digest must not rotate on unrelated checkpoint appends'
+assert d['challenge_log_head_id'] > int(os.environ['HEADID3']), 'head id must advance with the log'
+assert d['challenge_log_head_hash'] != os.environ['HEADHASH3'], 'head hash must track the new log head'
+print('PASS')
+PYEOF
 curl -s "$BASE/v1/challenge-log" -o /tmp/wrap_test.json
 HEAD4=$($PY -c "import json; rows=json.load(open('/tmp/wrap_test.json'))['challenges']; print([r['entry_hash'] for r in rows if r['id']==4][0])")
 check "tip update -> 201" 201 -X POST -H 'Content-Type: application/json' \
