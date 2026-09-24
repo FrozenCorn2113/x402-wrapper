@@ -226,6 +226,8 @@ echo "--- envelope statement ---"
 check "statement -> 200" 200 "$BASE/v1/envelopes/$ENV_ID"
 grep -q '"balance_atomic": *4999900' /tmp/wrap_test.json && grep -q '"per_call_cap_atomic": *1000' /tmp/wrap_test.json && grep -q '"reason_required": *false' /tmp/wrap_test.json && echo "PASS: statement balance + policy" && pass=$((pass+1)) || { echo "FAIL: statement contents"; fail=$((fail+1)); }
 grep -q '"call_id"' /tmp/wrap_test.json && echo "PASS: statement includes receipt lines" && pass=$((pass+1)) || { echo "FAIL: statement receipts"; fail=$((fail+1)); }
+grep -q '"funded_rail": *"base-usdc"' /tmp/wrap_test.json && echo "PASS: statement publishes funded_rail" && pass=$((pass+1)) || { echo "FAIL: statement funded_rail"; fail=$((fail+1)); }
+grep -q '"settled_rail": *"base-usdc"' /tmp/wrap_test.json && grep -q '"buyer_rail": *"base-usdc"' /tmp/wrap_test.json && echo "PASS: receipt lines carry settled_rail + buyer_rail" && pass=$((pass+1)) || { echo "FAIL: receipt rail fields"; fail=$((fail+1)); }
 check "catalog advertises envelope_support" 200 "$BASE/v1"
 grep -q '"envelope_support": *true' /tmp/wrap_test.json && echo "PASS: envelope_support:true in /v1" && pass=$((pass+1)) || { echo "FAIL: envelope_support"; fail=$((fail+1)); }
 check "unknown envelope statement -> 404" 404 "$BASE/v1/envelopes/env_abcdef012345"

@@ -49,6 +49,14 @@ RECEIPT_DIR = BASE_DIR / "receipts"
 
 USDC_DECIMALS = 6
 STATUSES = ("active", "suspended", "closed")
+# Rail labels published on the public statement endpoint. v1 is Base-USDC
+# only: top-ups are operator-attested after read-only on-chain verification
+# of native USDC to the business wallet on Base mainnet, and every draw-down
+# settles against that Base-USDC credit. The two fields are published per
+# spend precisely so that the day they DIFFER (a cross-rail settle), the
+# seam is visible in public — nanoswarm's composition-seam test (2026-09-24).
+FUNDED_RAIL = "base-usdc"   # rail the principal's money arrived on
+SETTLED_RAIL = "base-usdc"  # rail the seller accepted for this spend
 _ID_RE = re.compile(r"^env_[0-9a-f]{12}$")
 _WALLET_RE = re.compile(r"^0x[0-9a-f]{40}$")
 _MAX_REASON_LEN = 500
@@ -170,6 +178,7 @@ def open_envelope(
         "velocity_per_min": velocity,
         "reason_required": bool(reason_required),
         "status": "active",
+        "funded_rail": FUNDED_RAIL,
         "created_at": now_iso(),
         "updated_at": now_iso(),
         "total_topped_up_atomic": usd_to_atomic(amount),
@@ -325,6 +334,7 @@ def try_spend(
             "wrapper": wrapper_name,
             "price_atomic": price_atomic,
             "reason": reason_s,
+            "buyer_rail": env.get("funded_rail", FUNDED_RAIL),
             "balance_before_atomic": before,
             "balance_after_atomic": env["balance_atomic"],
         }
@@ -341,6 +351,8 @@ def finalize_spend(pending: dict, upstream_status: int, latency_ms: int) -> dict
         "ts": pending["ts"],
         "wrapper": pending["wrapper"],
         "price_atomic": pending["price_atomic"],
+        "settled_rail": SETTLED_RAIL,
+        "buyer_rail": pending.get("buyer_rail", FUNDED_RAIL),
         "reason": pending["reason"],
         "upstream_status": upstream_status,
         "latency_ms": latency_ms,
@@ -354,6 +366,8 @@ def finalize_spend(pending: dict, upstream_status: int, latency_ms: int) -> dict
         "call_id": pending["call_id"],
         "wrapper": pending["wrapper"],
         "price_atomic": pending["price_atomic"],
+        "settled_rail": SETTLED_RAIL,
+        "buyer_rail": pending.get("buyer_rail", FUNDED_RAIL),
         "reason": pending["reason"],
         "balance_remaining_atomic": pending["balance_after_atomic"],
         "upstream_status": upstream_status,
@@ -388,6 +402,7 @@ def statement(envelope_id: str) -> dict | None:
         "principal_wallet": env["principal_wallet"],
         "label": env["label"],
         "status": env["status"],
+        "funded_rail": env.get("funded_rail", FUNDED_RAIL),
         "balance_atomic": env["balance_atomic"],
         "balance_usdc": f"{env['balance_atomic'] / 10**USDC_DECIMALS:.6f}",
         "policy": {
