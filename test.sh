@@ -75,6 +75,7 @@ grep -q '"price":{"amount":"0.0005","currency":"USD"}' /tmp/wrap_test.json && ec
 grep -q '"error":"Payment required. weather-now costs $0.0005 USDC per call."' /tmp/wrap_test.json && echo "PASS: 402 error carries plain-English price sentence (Strale pattern)" && pass=$((pass+1)) || { echo "FAIL: 402 error price sentence"; fail=$((fail+1)); }
 grep -qi '^link:.*agent-card' /tmp/wrap_headers.txt && echo "PASS: 402 carries Link header to agent-card (Strale pattern)" && pass=$((pass+1)) || { echo "FAIL: 402 Link agent-card"; fail=$((fail+1)); }
 grep -qi '^access-control-expose-headers:.*payment-required' /tmp/wrap_headers.txt && echo "PASS: 402 exposes payment headers for CORS (Strale pattern)" && pass=$((pass+1)) || { echo "FAIL: 402 CORS expose headers"; fail=$((fail+1)); }
+grep -qi '^access-control-expose-headers:.*www-authenticate' /tmp/wrap_headers.txt && echo "PASS: 402 CORS expose list includes WWW-Authenticate mirror" && pass=$((pass+1)) || { echo "FAIL: 402 CORS expose includes WWW-Authenticate"; fail=$((fail+1)); }
 $PY - <<'PYEOF'
 import re, base64, json
 hdrs = open('/tmp/wrap_headers.txt').read()

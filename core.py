@@ -199,7 +199,7 @@ def payment_required_headers(wrapper: dict) -> dict:
         "WWW-Authenticate": f'X402 requirements="{b64}"',
         "Link": '</.well-known/agent-card.json>; rel="agent-card"',
         "Access-Control-Expose-Headers": (
-            "PAYMENT-REQUIRED, X-Payment-Required, X-Payment-Response"
+            "PAYMENT-REQUIRED, X-Payment-Required, WWW-Authenticate, X-Payment-Response"
         ),
     }
 
