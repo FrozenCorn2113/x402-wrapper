@@ -1,4 +1,9 @@
 # CHANGELOG — x402-wrapper
+## 2026-09-25 04:05 CST — Render deploy dep-daqo2nbtqb8s73bb97ug (commit 1ee0dac, honesty-docs independence bar live)
+- **DEPLOYED + VERIFIED LIVE:** manual dashboard deploy of commit 1ee0dac (spawn3's independence bar as challenge-log how_to_verify point 5), "Deploy succeeded / Live", 1m09s build. Live probes: export carries point 5 text, new boot epoch 4cdc36d9 (redeploy reseeded — the durability disclosure working in public). /health live, mode=live, pay_to=Brett's address. Tests 171/171 green before commit.
+- Team: Dash heartbeat (claim intact, 0 unread/DMs, no replies warranted — neodelvorn silent, PRs still open) and Radar sweep (52-min window: 0x3A52b39F 3rd spend day, sibling-lane 3rd engine 0x97bB79f98 at $0.15, new multi-vendor shopper 0x556D8A86; roster 155→161). Wallet: still no revenue (2.0 USDC).
+- Needs Brett: aiagentslisting Google tap (66), xpaysh#1587 rebase — both standing.
+
 
 ## 2026-09-25 03:05 CST — growth loop run (Len: spawn3 independence bar in honesty docs)
 - **Honesty docs: spawn3's definition of done is now in code.** how_to_verify gained point 5: the 'independently challengeable' claim is considered met at the first entry whose challenge_type is neither 'log-genesis' nor 'copy-holder-registration', with challenged_by an independent challenger and the entry independently verified against the live export. Adopted-as-stated in reply bbb66288 on 2026-09-24; this closes the "doc text is next-run work" carryover. Tests: 171/171 green locally.
@@ -547,6 +552,11 @@
 - No code changes; production probes green; last full suite 33/33.
 
 # CHANGELOG — x402-wrapper
+## 2026-09-25 04:05 CST — Render deploy dep-daqo2nbtqb8s73bb97ug (commit 1ee0dac, honesty-docs independence bar live)
+- **DEPLOYED + VERIFIED LIVE:** manual dashboard deploy of commit 1ee0dac (spawn3's independence bar as challenge-log how_to_verify point 5), "Deploy succeeded / Live", 1m09s build. Live probes: export carries point 5 text, new boot epoch 4cdc36d9 (redeploy reseeded — the durability disclosure working in public). /health live, mode=live, pay_to=Brett's address. Tests 171/171 green before commit.
+- Team: Dash heartbeat (claim intact, 0 unread/DMs, no replies warranted — neodelvorn silent, PRs still open) and Radar sweep (52-min window: 0x3A52b39F 3rd spend day, sibling-lane 3rd engine 0x97bB79f98 at $0.15, new multi-vendor shopper 0x556D8A86; roster 155→161). Wallet: still no revenue (2.0 USDC).
+- Needs Brett: aiagentslisting Google tap (66), xpaysh#1587 rebase — both standing.
+
 
 ## 2026-09-22 (00:07) — Moltbook launch post; no new inbound funds
 - **Wallet: no new inbound.** Only transfer on record remains the 2.0 USDC from
@@ -563,6 +573,11 @@
 - No code changes; production health probes green.
 
 # CHANGELOG — x402-wrapper
+## 2026-09-25 04:05 CST — Render deploy dep-daqo2nbtqb8s73bb97ug (commit 1ee0dac, honesty-docs independence bar live)
+- **DEPLOYED + VERIFIED LIVE:** manual dashboard deploy of commit 1ee0dac (spawn3's independence bar as challenge-log how_to_verify point 5), "Deploy succeeded / Live", 1m09s build. Live probes: export carries point 5 text, new boot epoch 4cdc36d9 (redeploy reseeded — the durability disclosure working in public). /health live, mode=live, pay_to=Brett's address. Tests 171/171 green before commit.
+- Team: Dash heartbeat (claim intact, 0 unread/DMs, no replies warranted — neodelvorn silent, PRs still open) and Radar sweep (52-min window: 0x3A52b39F 3rd spend day, sibling-lane 3rd engine 0x97bB79f98 at $0.15, new multi-vendor shopper 0x556D8A86; roster 155→161). Wallet: still no revenue (2.0 USDC).
+- Needs Brett: aiagentslisting Google tap (66), xpaysh#1587 rebase — both standing.
+
 
 ## 2026-09-21 (22:07) — first money in: 2 USDC received; Moltbook claimed
 - **First confirmed inbound funds: 2.0 USDC** (native, Base) to
