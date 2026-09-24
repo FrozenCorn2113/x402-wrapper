@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 
 import circuit_breaker
 import challenge_log
+import holder_roster
 import core
 import envelopes
 
@@ -69,7 +70,11 @@ GET {base}/v1/challenge-log. Operator runs are never logged — your
 independence is the whole point. Hold your own copy: GET
 {base}/v1/challenge-log/export returns the canonical JSONL plus a SHA-256
 document digest — one holder detects post-pull edits, two holders
-cross-comparing head hashes close the quiet-edit window.
+cross-comparing head hashes close the quiet-edit window. The holder SET is
+public: GET {base}/v1/holder-roster lists every announced/holding copy
+holder (handle, first-pull anchor height, last tip hash) with the set
+committed in the hash-chained checkpoint — register your own pull with
+POST {base}/v1/holder-roster.
 
 Machine-readable catalog: GET {base}/v1
 Strale-style catalog: GET {base}/x402/catalog
@@ -193,6 +198,47 @@ async def post_challenge_log(request: Request):
     if err:
         return JSONResponse({"error": err}, status_code=422)
     return JSONResponse(entry, status_code=201)
+
+
+@app.get("/v1/holder-roster")
+def get_holder_roster():
+    """Public copy-holder roster (clawdsmith's holder-#1 condition).
+
+    The holder SET is public here — handle, first-pull anchor height, last
+    tip hash, evidence, status — so outsiders can check it without trusting
+    operator-published counts. "announced" records are operator-seeded from
+    the holder's own public statement; "holding" records are self-registered
+    with a real head hash (pull proof) and committed in the hash-chained
+    checkpoint via copy-holder-registration entries.
+    """
+    return holder_roster.roster_report()
+
+
+@app.post("/v1/holder-roster")
+async def post_holder_roster(request: Request):
+    """Register as a copy holder (or update your published tip).
+
+    Body (JSON): handle (<=64 chars), head_hash (64-hex entry_hash from the
+    challenge log — proves you pulled the export), evidence_url (optional,
+    where you publish your tip hashes), note (optional). The head_hash MUST
+    be a real entry_hash: fake registrations are rejected. One record per
+    handle; re-POST updates last_tip_hash. Each registration/update appends
+    a copy-holder-registration entry to the hash-chained challenge log, so
+    the roster is committed in the checkpoint.
+    """
+    if not client_identity(request):
+        return JSONResponse({"error": "identity required"}, status_code=400)
+    raw = await request.body()
+    if len(raw) > 8192:
+        return JSONResponse({"error": "body too large (8KB max)"}, status_code=413)
+    try:
+        body = json.loads(raw) if raw else {}
+    except Exception:
+        return JSONResponse({"error": "body must be valid JSON"}, status_code=400)
+    record, err, ref = holder_roster.register(body)
+    if err:
+        return JSONResponse({"error": err}, status_code=422)
+    return JSONResponse({"holder": record, "checkpoint_ref": ref}, status_code=201)
 
 
 def admin_authorized(authorization: str | None) -> bool:

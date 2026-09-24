@@ -15,11 +15,16 @@ sleep 3
 rm -f receipts/spent_hashes.json challenge-log/challenge_log.jsonl challenge-log/challenge_log.jsonl.bak
 # Envelope ledger state persists too; reset for hermetic tests.
 rm -f envelopes/envelopes.json receipts/envelope-*.jsonl
+# Holder-roster state persists too; reset for hermetic tests.
+rm -f holder-roster/roster.json
 
 pass=0; fail=0
 check() { # check <label> <expected_code> <curl args...>
   local label="$1" want="$2"; shift 2
-  code=$(curl -s -o /tmp/wrap_test.json -D /tmp/wrap_headers.txt -w "%{http_code}" "$@")
+  # --max-time caps any single check: a wedged server or hung upstream must
+  # fail the check, never stall the suite forever (2026-09-24: a lock
+  # deadlock in new code hung a POST and stalled the whole run).
+  code=$(curl -s --max-time 60 -o /tmp/wrap_test.json -D /tmp/wrap_headers.txt -w "%{http_code}" "$@")
   if [ "$code" = "$want" ]; then echo "PASS: $label (HTTP $code)"; pass=$((pass+1));
   else echo "FAIL: $label (want $want, got $code)"; fail=$((fail+1)); fi
 }
@@ -222,6 +227,83 @@ check "bad submit (bad result) -> 422" 422 -X POST -H 'Content-Type: application
 check "freshness beacon reflects submission" 200 "$BASE/v1/freshness"
 grep -q '"challenged_by":"harness-ci v1"' /tmp/wrap_test.json && grep -q '"last_result":"pass"' /tmp/wrap_test.json && grep -qv '"staleness_seconds":null' /tmp/wrap_test.json && echo "PASS: beacon shows latest independent challenge" && pass=$((pass+1)) || { echo "FAIL: beacon after submit"; fail=$((fail+1)); }
 grep -q '"target_interval_seconds": *3600' /tmp/wrap_test.json && echo "PASS: week-1 hourly cadence" && pass=$((pass+1)) || { echo "FAIL: cadence"; fail=$((fail+1)); }
+
+echo "--- holder roster (public copy-holder set) ---"
+check "holder roster -> 200" 200 "$BASE/v1/holder-roster"
+$PY - <<'PYEOF' && echo "PASS: roster shows announced holder #1 (clawdsmith)" && pass=$((pass+1)) || { echo "FAIL: announced roster content"; fail=$((fail+1)); }
+import json, re
+d = json.load(open('/tmp/wrap_test.json'))
+assert d['format'] == 'x402wrapper-holder-roster', d.get('format')
+assert d['holders_count'] == 1, d['holders_count']
+h = d['holders'][0]
+assert h['handle'] == 'clawdsmith' and h['status'] == 'announced', h
+assert h['first_pull_head_hash'] is None and h['last_tip_hash'] is None, 'announced record must not fake a pull'
+assert re.fullmatch(r'[0-9a-f]{64}', d['roster_digest_sha256']), 'bad digest'
+assert d['announced_count'] == 1 and d['holding_count'] == 0, 'counts'
+assert 'how_to_verify' in d and 'honesty' in d, 'docs'
+print('PASS')
+PYEOF
+export DIGEST1=$($PY -c "import json; print(json.load(open('/tmp/wrap_test.json'))['roster_digest_sha256'])")
+check "register with fake head_hash -> 422" 422 -X POST -H 'Content-Type: application/json' \
+  -d '{"handle":"roster-ci","head_hash":"ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00"}' "$BASE/v1/holder-roster"
+check "register missing handle -> 422" 422 -X POST -H 'Content-Type: application/json' \
+  -d '{"head_hash":"ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00ff00"}' "$BASE/v1/holder-roster"
+curl -s "$BASE/v1/challenge-log" -o /tmp/wrap_test.json
+HEAD2=$($PY -c "import json; rows=json.load(open('/tmp/wrap_test.json'))['challenges']; print([r['entry_hash'] for r in rows if r['id']==2][0])")
+check "register holder -> 201" 201 -X POST -H 'Content-Type: application/json' \
+  -d "{\"handle\":\"roster-ci\",\"head_hash\":\"$HEAD2\",\"evidence_url\":\"https://example.com/tip\",\"note\":\"ci test pull\"}" "$BASE/v1/holder-roster"
+$PY - <<'PYEOF' && echo "PASS: registration stored w/ checkpoint ref" && pass=$((pass+1)) || { echo "FAIL: registration record"; fail=$((fail+1)); }
+import json, re
+d = json.load(open('/tmp/wrap_test.json'))
+h, ref = d['holder'], d['checkpoint_ref']
+assert h['handle'] == 'roster-ci' and h['status'] == 'holding', h
+assert h['first_pull_height'] == 2 and h['last_tip_height'] == 2, h
+assert h['last_tip_hash'] == h['first_pull_head_hash'], 'tip hashes'
+assert h['evidence_url'] == 'https://example.com/tip', 'evidence'
+assert ref['entry_id'] == 3 and re.fullmatch(r'[0-9a-f]{64}', ref['entry_hash']), ref
+print('PASS')
+PYEOF
+check "roster lists 2 holders, digest changed" 200 "$BASE/v1/holder-roster"
+$PY - <<'PYEOF' && echo "PASS: roster set grew, digest rotated" && pass=$((pass+1)) || { echo "FAIL: roster after registration"; fail=$((fail+1)); }
+import json, os
+d = json.load(open('/tmp/wrap_test.json'))
+assert d['holders_count'] == 2, d['holders_count']
+assert d['announced_count'] == 1 and d['holding_count'] == 1, 'counts'
+assert d['roster_digest_sha256'] != os.environ['DIGEST1'], 'digest must change with the set'
+holding = [h for h in d['holders'] if h['status'] == 'holding'][0]
+assert holding['checkpoint_refs'] and holding['checkpoint_refs'][0]['entry_id'] == 3, 'checkpoint refs'
+print('PASS')
+PYEOF
+# Re-register with a newer head hash: first_pull stays, last_tip moves.
+check "submit third challenge -> 201" 201 -X POST -H 'Content-Type: application/json' -d '{"challenged_by":"harness-ci v1","challenge_type":"identical-loop-harness","result":"pass","details":"run 3"}' "$BASE/v1/challenge-log"
+curl -s "$BASE/v1/challenge-log" -o /tmp/wrap_test.json
+HEAD4=$($PY -c "import json; rows=json.load(open('/tmp/wrap_test.json'))['challenges']; print([r['entry_hash'] for r in rows if r['id']==4][0])")
+check "tip update -> 201" 201 -X POST -H 'Content-Type: application/json' \
+  -d "{\"handle\":\"roster-ci\",\"head_hash\":\"$HEAD4\"}" "$BASE/v1/holder-roster"
+$PY - <<'PYEOF' && echo "PASS: tip update keeps first-pull anchor" && pass=$((pass+1)) || { echo "FAIL: tip update"; fail=$((fail+1)); }
+import json
+h = json.load(open('/tmp/wrap_test.json'))['holder']
+assert h['first_pull_height'] == 2, 'first-pull anchor must not move'
+assert h['last_tip_height'] == 4, h
+assert h['last_tip_hash'] != h['first_pull_head_hash'], 'tip must move'
+print('PASS')
+PYEOF
+# Roster registrations must NOT reset the freshness beacon.
+check "freshness ignores roster registrations" 200 "$BASE/v1/freshness"
+grep -q '"challenged_by":"harness-ci v1"' /tmp/wrap_test.json && grep -q '"last_result":"pass"' /tmp/wrap_test.json && echo "PASS: beacon still shows latest independent challenge" && pass=$((pass+1)) || { echo "FAIL: beacon after roster activity"; fail=$((fail+1)); }
+grep -q '"holder_registrations_recorded": *2' /tmp/wrap_test.json && grep -q '"challenges_recorded": *3' /tmp/wrap_test.json && echo "PASS: beacon counts challenges vs registrations separately" && pass=$((pass+1)) || { echo "FAIL: beacon counts"; fail=$((fail+1)); }
+# Registration entry is visible in the public log, chain intact.
+check "challenge log carries registration entries" 200 "$BASE/v1/challenge-log"
+$PY - <<'PYEOF' && echo "PASS: roster commits visible in hash-chained log" && pass=$((pass+1)) || { echo "FAIL: log registration entries"; fail=$((fail+1)); }
+import json, hashlib
+rows = json.load(open('/tmp/wrap_test.json'))['challenges']
+regs = [r for r in rows if r.get('challenge_type') == 'copy-holder-registration']
+assert len(regs) == 2, len(regs)
+for r in rows:
+    body = {k: v for k, v in r.items() if k != 'entry_hash'}
+    assert hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest() == r['entry_hash'], 'chain break'
+print('PASS')
+PYEOF
 
 echo "--- envelopes (prepaid budgets) ---"
 WALLET=0x1234567890abcdef1234567890abcdef12345678

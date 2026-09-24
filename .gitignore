@@ -4,5 +4,6 @@ __pycache__/
 .env.production
 receipts/
 challenge-log/
+holder-roster/
 envelopes/
 *.log

@@ -36,6 +36,12 @@ _MAX_TYPE = 100
 _MAX_DETAILS = 2000
 _RESULTS = ("pass", "fail", "inconclusive")
 
+# Entry types that live in the hash-chained log but are NOT independent
+# breaker challenges. The copy-holder roster commits registrations in the
+# checkpoint (holder_roster.register), and those must never reset the
+# freshness beacon: staleness measures independent harness runs only.
+_NON_CHALLENGE_TYPES = {"copy-holder-registration"}
+
 # Published challenge cadence: hourly during the first week after the breaker
 # shipped publicly (2026-09-22), then daily. Staleness is measured against
 # this cadence so a lazy buyer can see at a glance whether the beaker is
@@ -170,11 +176,20 @@ def _target_interval(now: float) -> int:
 
 
 def freshness_report() -> dict:
-    """Freshness beacon: the last independently submitted challenge + staleness."""
-    entries = read_all(1)
+    """Freshness beacon: the last independently submitted challenge + staleness.
+
+    Roster registrations (copy-holder-registration entries) live in the same
+    hash-chained log but are NOT independent breaker challenges, so they are
+    skipped here: the beacon must measure harness runs only.
+    """
+    entries = read_all(_MAX_ENTRIES)
+    latest = next(
+        (e for e in reversed(entries)
+         if e.get("challenge_type") not in _NON_CHALLENGE_TYPES),
+        None,
+    )
     now = int(time.time())
     interval = _target_interval(now)
-    latest = entries[-1] if entries else None
     stale_seconds = now - latest["submitted_at_unix"] if latest else None
     return {
         "cadence": _CADENCE_POLICY,
@@ -185,7 +200,10 @@ def freshness_report() -> dict:
         "last_result": latest["result"] if latest else None,
         "staleness_seconds": stale_seconds,
         "fresh": bool(latest) and stale_seconds is not None and stale_seconds <= interval * 1.5,
-        "challenges_recorded": len(read_all(_MAX_ENTRIES)),
+        "challenges_recorded": sum(
+            1 for e in entries if e.get("challenge_type") not in _NON_CHALLENGE_TYPES),
+        "holder_registrations_recorded": sum(
+            1 for e in entries if e.get("challenge_type") in _NON_CHALLENGE_TYPES),
         "chain": verify_chain(),
         "log": "GET /v1/challenge-log",
         "honesty": (
