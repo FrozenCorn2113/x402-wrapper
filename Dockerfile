@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 
 # Only what the web service needs (mcp_server.py is stdio-local, not deployed).
-COPY server.py core.py verify_onchain.py circuit_breaker.py challenge_log.py envelopes.py ./
+COPY server.py core.py verify_onchain.py circuit_breaker.py challenge_log.py envelopes.py holder_roster.py ./
 COPY skill.md ./
 COPY configs/ ./configs/
 # receipts/ is created at runtime by log_receipt()
