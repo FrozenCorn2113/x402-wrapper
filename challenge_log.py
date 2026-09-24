@@ -40,7 +40,9 @@ _RESULTS = ("pass", "fail", "inconclusive")
 # breaker challenges. The copy-holder roster commits registrations in the
 # checkpoint (holder_roster.register), and those must never reset the
 # freshness beacon: staleness measures independent harness runs only.
-_NON_CHALLENGE_TYPES = {"copy-holder-registration"}
+# "log-genesis" is the operator-attributed bootstrap anchor (see
+# ensure_genesis): the log started here, nothing more.
+_NON_CHALLENGE_TYPES = {"copy-holder-registration", "log-genesis"}
 
 # Published challenge cadence: hourly during the first week after the breaker
 # shipped publicly (2026-09-22), then daily. Staleness is measured against
@@ -77,6 +79,68 @@ def _hash(entry: dict) -> str:
 
 
 _lock = threading.Lock()
+
+
+# Bootstrap anchor entry: guarantees a freshly started server always offers
+# a REAL entry_hash for POST /v1/holder-roster. The first holder literally
+# could not self-register: the log had 0 entries, so no entry_hash existed
+# to cite (spawn3's Moltbook dry-run report, 2026-09-24 — their bogus-hash
+# POST hit our 422 "not an entry_hash in the challenge log", correctly).
+# A holder cites this entry to say "I pulled the export and anchored to
+# what the server showed at boot" — they still cannot cite it without
+# reading the export, so the pull-proof property is preserved.
+#
+# Honesty labels, matching the rest of the protocol: this is self-attributed
+# to the operator, it is NOT an independent breaker challenge (it is in
+# _NON_CHALLENGE_TYPES, so the freshness beacon ignores it), and it is the
+# only entry the operator ever writes on its own initiative.
+_GENESIS_ENTRY = {
+    "challenged_by": "x402wrapper-operator",
+    "challenge_type": "log-genesis",
+    "result": "pass",
+    "details": (
+        "Bootstrap anchor: the challenge log was empty when the server "
+        "started. This entry gives every later entry a hash-chained "
+        "predecessor and gives copy-holders a real entry_hash to cite in "
+        "POST /v1/holder-roster before any independent harness run exists. "
+        "Not an independent breaker challenge; independence is established "
+        "only by independently submitted harness runs."
+    ),
+}
+
+
+def ensure_genesis() -> dict | None:
+    """Seed an empty log with the log-genesis bootstrap entry (once).
+
+    Idempotent: no-op when the log file already has entries, so it is safe
+    to call on every server startup (Render free tier restarts are frequent
+    and its filesystem is ephemeral). Returns the stored entry, or None.
+
+    NOTE: this acquires _lock itself and inlines the append — it must NOT
+    call submit() (threading.Lock is not reentrant).
+    """
+    with _lock:
+        if os.path.exists(_LOG_FILE):
+            with open(_LOG_FILE, "r", encoding="utf-8") as f:
+                if any(line.strip() for line in f):
+                    return None  # log already bootstrapped
+        err = _valid(_GENESIS_ENTRY)
+        if err:
+            return None  # cannot happen: the constant entry is valid
+        _ensure_dir()
+        stored = {
+            "id": 1,
+            "submitted_at_unix": int(time.time()),
+            "challenged_by": _GENESIS_ENTRY["challenged_by"],
+            "challenge_type": _GENESIS_ENTRY["challenge_type"],
+            "result": _GENESIS_ENTRY["result"],
+            "details": _GENESIS_ENTRY["details"],
+            "prev_hash": _GENESIS,
+        }
+        stored["entry_hash"] = _hash(stored)
+        with open(_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(stored) + "\n")
+    return stored
 
 
 def _ensure_dir() -> None:
@@ -203,7 +267,8 @@ def freshness_report() -> dict:
         "challenges_recorded": sum(
             1 for e in entries if e.get("challenge_type") not in _NON_CHALLENGE_TYPES),
         "holder_registrations_recorded": sum(
-            1 for e in entries if e.get("challenge_type") in _NON_CHALLENGE_TYPES),
+            1 for e in entries
+            if e.get("challenge_type") == "copy-holder-registration"),
         "chain": verify_chain(),
         "log": "GET /v1/challenge-log",
         "honesty": (

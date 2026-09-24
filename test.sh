@@ -8,15 +8,18 @@ BASE=http://127.0.0.1:8000
 # Admin auth for envelope tests (test-only token; real deployments set their own).
 export ADMIN_TOKEN=test-admin-token
 
-$PY server.py & SRV=$!
-trap "kill $SRV 2>/dev/null" EXIT
-sleep 3
-# Replay-protection state persists across runs; reset for a hermetic test.
+# Hermetic reset BEFORE the server starts: the reset block used to run after
+# server startup, which deleted the challenge-log bootstrap seed written at
+# import time (test bug exposed by the log-genesis anchor, 2026-09-24).
 rm -f receipts/spent_hashes.json challenge-log/challenge_log.jsonl challenge-log/challenge_log.jsonl.bak
 # Envelope ledger state persists too; reset for hermetic tests.
 rm -f envelopes/envelopes.json receipts/envelope-*.jsonl
 # Holder-roster state persists too; reset for hermetic tests.
 rm -f holder-roster/roster.json
+
+$PY server.py & SRV=$!
+trap "kill $SRV 2>/dev/null" EXIT
+sleep 3
 
 pass=0; fail=0
 check() { # check <label> <expected_code> <curl args...>
@@ -183,17 +186,30 @@ grep -q '"endpoints"' /tmp/wrap_test.json && grep -q 'weather-now' /tmp/wrap_tes
 echo "--- freshness beacon + challenge log ---"
 check "freshness beacon -> 200" 200 "$BASE/v1/freshness"
 grep -q 'last_independently_challenged_at' /tmp/wrap_test.json && grep -q 'challenged_by' /tmp/wrap_test.json && grep -q '"staleness_seconds":null' /tmp/wrap_test.json && echo "PASS: empty beacon shape (no challenges yet)" && pass=$((pass+1)) || { echo "FAIL: empty beacon shape"; fail=$((fail+1)); }
-check "challenge log (empty) -> 200" 200 "$BASE/v1/challenge-log"
-grep -q '"challenges":\[\]' /tmp/wrap_test.json && echo "PASS: empty log" && pass=$((pass+1)) || { echo "FAIL: empty log"; fail=$((fail+1)); }
+check "challenge log (genesis-seeded) -> 200" 200 "$BASE/v1/challenge-log"
+$PY - <<'PYEOF' && echo "PASS: genesis bootstrap entry seeded at startup" && pass=$((pass+1)) || { echo "FAIL: genesis bootstrap entry"; fail=$((fail+1)); }
+import json, hashlib
+rows = json.load(open('/tmp/wrap_test.json'))['challenges']
+assert len(rows) == 1, rows
+g = rows[0]
+assert g['id'] == 1 and g['challenge_type'] == 'log-genesis', g
+assert g['challenged_by'] == 'x402wrapper-operator', g
+assert g['prev_hash'] == '0' * 64, 'genesis entry must chain to _GENESIS'
+body = {k: v for k, v in g.items() if k != 'entry_hash'}
+assert hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest() == g['entry_hash'], 'bad genesis entry_hash'
+print('PASS: genesis entry shape, chain, hash verify')
+PYEOF
+export GENESIS_HASH=$($PY -c "import json; print(json.load(open('/tmp/wrap_test.json'))['challenges'][0]['entry_hash'])")
 check "submit challenge -> 201" 201 -X POST -H 'Content-Type: application/json' -d '{"challenged_by":"harness-ci v1","challenge_type":"identical-loop-harness","result":"pass","details":"25 identical unpaid calls to /v1/echo all returned 429 AGENT_LOOP_DETECTED"}' "$BASE/v1/challenge-log"
-grep -q '"id":1' /tmp/wrap_test.json && grep -q '"result":"pass"' /tmp/wrap_test.json && echo "PASS: stored entry shape" && pass=$((pass+1)) || { echo "FAIL: stored entry shape"; fail=$((fail+1)); }
-grep -q '"prev_hash":"0\{64\}"' /tmp/wrap_test.json && grep -q '"entry_hash":"[0-9a-f]\{64\}"' /tmp/wrap_test.json && echo "PASS: entry hash-chained (genesis prev)" && pass=$((pass+1)) || { echo "FAIL: hash chain fields"; fail=$((fail+1)); }
+grep -q '"id":2' /tmp/wrap_test.json && grep -q '"result":"pass"' /tmp/wrap_test.json && echo "PASS: stored entry shape (id 2 after genesis)" && pass=$((pass+1)) || { echo "FAIL: stored entry shape"; fail=$((fail+1)); }
+grep -q "\"prev_hash\":\"$GENESIS_HASH\"" /tmp/wrap_test.json && grep -q '"entry_hash":"[0-9a-f]\{64\}"' /tmp/wrap_test.json && echo "PASS: entry hash-chained (prev = genesis entry)" && pass=$((pass+1)) || { echo "FAIL: hash chain fields"; fail=$((fail+1)); }
 check "submit second challenge -> 201" 201 -X POST -H 'Content-Type: application/json' -d '{"challenged_by":"harness-ci v1","challenge_type":"identical-loop-harness","result":"pass","details":"repeat run 2"}' "$BASE/v1/challenge-log"
-check "challenge log lists 2 chained entries" 200 "$BASE/v1/challenge-log"
+check "challenge log lists 3 chained entries (genesis + 2)" 200 "$BASE/v1/challenge-log"
 $PY - <<'PYEOF'
 import json
 rows = json.load(open('/tmp/wrap_test.json'))['challenges']
-assert len(rows) == 2, rows
+assert len(rows) == 3, rows
+assert rows[0]['challenge_type'] == 'log-genesis', 'row 0 must be the bootstrap anchor'
 assert rows[1]['prev_hash'] == rows[0]['entry_hash'], 'chain link broken'
 import hashlib
 for r in rows:
@@ -209,7 +225,7 @@ $PY - <<'PYEOF'
 import json, hashlib
 doc = json.load(open('/tmp/wrap_test.json'))
 rows = doc['entries']
-assert doc['entries_count'] == 2 == len(rows), doc['entries_count']
+assert doc['entries_count'] == 3 == len(rows), doc['entries_count']
 assert doc['head_hash'] == rows[-1]['entry_hash'], 'head_hash mismatch'
 # digest recomputes from the raw canonical JSONL
 assert hashlib.sha256(doc['raw_jsonl'].encode()).hexdigest() == doc['document_digest_sha256'], 'document digest mismatch'
@@ -260,7 +276,7 @@ assert h['handle'] == 'roster-ci' and h['status'] == 'holding', h
 assert h['first_pull_height'] == 2 and h['last_tip_height'] == 2, h
 assert h['last_tip_hash'] == h['first_pull_head_hash'], 'tip hashes'
 assert h['evidence_url'] == 'https://example.com/tip', 'evidence'
-assert ref['entry_id'] == 3 and re.fullmatch(r'[0-9a-f]{64}', ref['entry_hash']), ref
+assert ref['entry_id'] == 4 and re.fullmatch(r'[0-9a-f]{64}', ref['entry_hash']), ref
 print('PASS')
 PYEOF
 check "roster lists 2 holders, digest changed" 200 "$BASE/v1/holder-roster"
@@ -271,7 +287,7 @@ assert d['holders_count'] == 2, d['holders_count']
 assert d['announced_count'] == 1 and d['holding_count'] == 1, 'counts'
 assert d['roster_digest_sha256'] != os.environ['DIGEST1'], 'digest must change with the set'
 holding = [h for h in d['holders'] if h['status'] == 'holding'][0]
-assert holding['checkpoint_refs'] and holding['checkpoint_refs'][0]['entry_id'] == 3, 'checkpoint refs'
+assert holding['checkpoint_refs'] and holding['checkpoint_refs'][0]['entry_id'] == 4, 'checkpoint refs'
 print('PASS')
 PYEOF
 # clawdsmith's last-pull-age proposal: ages computed server-side from logged pull events.

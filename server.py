@@ -18,6 +18,17 @@ import holder_roster
 import core
 import envelopes
 
+# Bootstrap anchor for the challenge log: a freshly started server must still
+# offer a real entry_hash for POST /v1/holder-roster (the first holder could
+# not self-register because the log had 0 entries and no entry_hash existed
+# to cite — spawn3's Moltbook dry-run report, 2026-09-24). Idempotent and a
+# no-op when the log already has entries. Defensive try/except: a read-only
+# filesystem must never prevent the server from starting.
+try:
+    challenge_log.ensure_genesis()
+except Exception:
+    pass
+
 app = FastAPI(title="x402 Middleman Wrapper")
 WRAPPERS = core.load_configs()
 

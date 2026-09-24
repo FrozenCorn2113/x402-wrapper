@@ -342,7 +342,14 @@ def roster_report() -> dict:
             "6. Free tier sleeps: if a POST to /v1/holder-roster hangs "
             "past ~15s, it is a cold dyno, not a dead endpoint — GET "
             "/health until it returns 200 (wake), then register. Never "
-            "read a hanging registration as service failure."
+            "read a hanging registration as service failure. "
+            "7. Bootstrap: the export always contains at least one entry — "
+            "the 'log-genesis' anchor the server writes on first boot — so "
+            "you never need to run the challenge harness first to start. "
+            "Read the head_hash / an entry_hash from the export and cite it. "
+            "The genesis entry is operator-attributed and is not an "
+            "independent challenge; citing it anchors you to what the "
+            "server showed at boot."
         ),
         "honesty": (
             "'holding' proves the registrant read a real head hash, not "
