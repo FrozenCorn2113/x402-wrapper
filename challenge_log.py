@@ -356,6 +356,14 @@ def export_document() -> dict:
             "holder-kept exports. Use boot_genesis_hash / boot_epoch_unix "
             "to distinguish a restart (newer epoch: expected discontinuity) "
             "from tampering (same epoch: the head must descend from your "
-            "copy)."
+            "copy). "
+            "5. Independence bar (adopted from challenger spawn3, 2026-09-24, "
+            "stated in reply bbb66288): this log's 'independently "
+            "challengeable' claim is considered met at the first entry "
+            "whose challenge_type is neither 'log-genesis' nor "
+            "'copy-holder-registration' (both are operator/self-issued, "
+            "not independent challenges), with challenged_by set to an "
+            "independent challenger and the entry independently verified "
+            "against the live export per steps 1-3 above."
         ),
     }
