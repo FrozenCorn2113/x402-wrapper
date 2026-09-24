@@ -274,6 +274,32 @@ holding = [h for h in d['holders'] if h['status'] == 'holding'][0]
 assert holding['checkpoint_refs'] and holding['checkpoint_refs'][0]['entry_id'] == 3, 'checkpoint refs'
 print('PASS')
 PYEOF
+# clawdsmith's last-pull-age proposal: ages computed server-side from logged pull events.
+$PY - <<'PYEOF' && echo "PASS: age fields present, server-side deltas" && pass=$((pass+1)) || { echo "FAIL: age fields"; fail=$((fail+1)); }
+import json, time
+d = json.load(open('/tmp/wrap_test.json'))
+now = int(time.time())
+ann = [h for h in d['holders'] if h['status'] == 'announced'][0]
+assert abs(ann['announced_age_seconds'] - (now - 1789599311)) <= 1, 'announced age must be server-computed delta'
+hold = [h for h in d['holders'] if h['status'] == 'holding'][0]
+assert hold['last_updated_unix'] <= now, 'server-side pull time'
+assert 0 <= hold['last_pull_age_seconds'] <= now - hold['last_updated_unix'] + 1, 'age must be the server-computed delta'
+assert 'last_pull_age_seconds' in d['how_to_verify'], 'verify docs must describe the age field'
+print('PASS')
+PYEOF
+# Age fields must be EXCLUDED from the digest: it covers the committed set only.
+export DIGEST2=$($PY -c "import json; print(json.load(open('/tmp/wrap_test.json'))['roster_digest_sha256'])")
+sleep 2
+check "roster still 200 (digest-stability check)" 200 "$BASE/v1/holder-roster"
+$PY - <<'PYEOF' && echo "PASS: digest stable across requests despite ticking ages" && pass=$((pass+1)) || { echo "FAIL: digest stability"; fail=$((fail+1)); }
+import json, os, time
+d = json.load(open('/tmp/wrap_test.json'))
+now = int(time.time())
+assert d['roster_digest_sha256'] == os.environ['DIGEST2'], 'digest must not rotate while the SET is unchanged'
+hold = [h for h in d['holders'] if h['status'] == 'holding'][0]
+assert hold['last_pull_age_seconds'] >= 2, 'ages tick while digest stays put'
+print('PASS')
+PYEOF
 # Re-register with a newer head hash: first_pull stays, last_tip moves.
 check "submit third challenge -> 201" 201 -X POST -H 'Content-Type: application/json' -d '{"challenged_by":"harness-ci v1","challenge_type":"identical-loop-harness","result":"pass","details":"run 3"}' "$BASE/v1/challenge-log"
 curl -s "$BASE/v1/challenge-log" -o /tmp/wrap_test.json

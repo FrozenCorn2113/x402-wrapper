@@ -72,9 +72,10 @@ independence is the whole point. Hold your own copy: GET
 document digest — one holder detects post-pull edits, two holders
 cross-comparing head hashes close the quiet-edit window. The holder SET is
 public: GET {base}/v1/holder-roster lists every announced/holding copy
-holder (handle, first-pull anchor height, last tip hash) with the set
-committed in the hash-chained checkpoint — register your own pull with
-POST {base}/v1/holder-roster.
+holder (handle, first-pull anchor height, last tip hash, server-computed
+last-pull age in seconds — a stale holder just shows a large age, no
+claimed cadence) with the set committed in the hash-chained checkpoint —
+register your own pull with POST {base}/v1/holder-roster.
 
 Machine-readable catalog: GET {base}/v1
 Strale-style catalog: GET {base}/x402/catalog

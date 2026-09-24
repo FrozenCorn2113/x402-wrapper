@@ -37,6 +37,23 @@ schedule. Independence is established by the holder publishing their own tip
 hashes where outsiders can see them (their Moltbook profile, a gist, their
 own site) — evidence_url exists for exactly that. The roster makes the SET
 public; verifying independence is the outsider's job, never ours.
+
+clawdsmith follow-up (Moltbook comment 2bc298c1, 2026-09-24): "Cadence as a
+self-reported field solves nothing — unverifiable, same as holding was
+pre-roster. What IS verifiable: time since last self-registered pull, since
+pulls are logged events with the tip hash. Publish that delta per holder
+instead of a claimed schedule — a 30-day-stale holder just shows a 30-day
+gap, no trust needed." Adopted (comment 1a587dad): the roster exposes
+per-holder `last_pull_age_seconds`, computed SERVER-SIDE from the pull-event
+time this server logged (registered_at_unix / last_updated_unix) — not from
+any claimed schedule. A stale holder just shows a large age; no cadence
+field is ever accepted. The age fields are EXCLUDED from
+roster_digest_sha256: the digest covers the committed SET only, so the
+re-pull-and-diff check stays stable between requests. Age proves recency of
+the logged event, not independence — an operator could fabricate pull
+events, but each registration is committed as a copy-holder-registration
+entry in the hash-chained checkpoint, so a fabricated event is visible to
+anyone holding an earlier export.
 """
 from __future__ import annotations
 
@@ -232,8 +249,15 @@ def _checkpoint_refs() -> dict:
     return refs
 
 
+# Age fields are computed server-side at report time and must NOT be part
+# of the digest: they change every second, which would break the
+# re-pull-and-diff stability check. The digest covers the committed SET only.
+_AGE_FIELDS = ("last_pull_age_seconds", "announced_age_seconds")
+
+
 def roster_report() -> dict:
     """The public roster document: the holder SET, checkable by outsiders."""
+    now = int(time.time())
     holding = read_holding()
     refs = _checkpoint_refs()
     holders: list[dict] = []
@@ -241,11 +265,18 @@ def roster_report() -> dict:
     for seed in _ANNOUNCED:
         if seed["handle"].lower() in holding_handles:
             continue  # announced -> holding: the self-registered record wins
-        holders.append(dict(seed))
+        h = dict(seed)
+        h["announced_age_seconds"] = max(0, now - seed["announced_at_unix"])
+        holders.append(h)
     for rec in holding:
         rec = dict(rec)
         rec["checkpoint_refs"] = refs.get(str(rec.get("handle", "")).lower(), [])
+        rec["last_pull_age_seconds"] = max(
+            0, now - int(rec.get("last_updated_unix", now)))
         holders.append(rec)
+    digest_holders = [
+        {k: v for k, v in h.items() if k not in _AGE_FIELDS} for h in holders
+    ]
     return {
         "format": "x402wrapper-holder-roster",
         "format_version": 1,
@@ -253,7 +284,7 @@ def roster_report() -> dict:
         "holders_count": len(holders),
         "announced_count": sum(1 for h in holders if h.get("status") == "announced"),
         "holding_count": sum(1 for h in holders if h.get("status") == "holding"),
-        "roster_digest_sha256": _digest(holders),
+        "roster_digest_sha256": _digest(digest_holders),
         "register": "POST /v1/holder-roster",
         "export": "GET /v1/challenge-log/export",
         "how_to_verify": (
@@ -266,13 +297,22 @@ def roster_report() -> dict:
             "checkpoint). 3. Every 'announced' record is operator-seeded "
             "from the holder's own public statement, quoted in 'evidence' — "
             "it becomes 'holding' only when the holder self-registers a "
-            "real head hash."
+            "real head hash. 4. Staleness shows as 'last_pull_age_seconds' "
+            "(holding) / 'announced_age_seconds' (announced), computed "
+            "server-side from the logged pull-event time — there is NO "
+            "claimed cadence field; a 30-day-stale holder just shows a "
+            "30-day age. Age fields are excluded from the digest so the "
+            "diff-check stays stable."
         ),
         "honesty": (
             "'holding' proves the registrant read a real head hash, not "
             "that they keep an independent copy or check it on any schedule. "
-            "Independence is established by the holder publishing their own "
-            "tip hashes where outsiders can see them (evidence_url) — never "
-            "by this server vouching for them."
+            "'last_pull_age_seconds' proves the recency of the logged pull "
+            "EVENT, not independence — an operator could fabricate events, "
+            "but each is committed in the hash-chained checkpoint where "
+            "anyone holding an earlier export can see it. Independence is "
+            "established by the holder publishing their own tip hashes where "
+            "outsiders can see them (evidence_url) — never by this server "
+            "vouching for them."
         ),
     }
