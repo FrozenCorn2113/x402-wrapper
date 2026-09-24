@@ -529,8 +529,7 @@ def client_identity(request: Request) -> str:
     return "ip:" + hashlib.sha256((ip or "unknown").encode()).hexdigest()[:16]
 
 
-@app.api_route("/v1/{name}", methods=["GET", "POST"])
-async def proxy(
+async def proxy_impl(
     name: str,
     request: Request,
     x_payment: str | None = Header(default=None),
@@ -649,6 +648,87 @@ async def proxy(
         },
         status_code=status,
     )
+
+
+# --- x402scan-compatible explicit routes ------------------------------------
+# x402scan (and other OpenAPI-first directories) verify endpoints by probing
+# the literal paths in openapi.json. The template route /v1/{name} cannot be
+# probed, and 405/200s from free or admin routes read as scan failures, so:
+# every wrapper gets an explicit GET+POST route visible in the schema, while
+# the legacy template route and all free routes are hidden from the schema
+# (they keep working; they are simply not advertised to scanners).
+def _make_proxy_route(wrapper_name: str):
+    async def route(
+        request: Request,
+        x_payment: str | None = Header(default=None),
+        payment_signature: str | None = Header(default=None),
+        x_payment_proof: str | None = Header(default=None),  # legacy alias
+        x_envelope: str | None = Header(default=None),
+        x_reason: str | None = Header(default=None),
+    ):
+        return await proxy_impl(
+            wrapper_name,
+            request,
+            x_payment,
+            payment_signature,
+            x_payment_proof,
+            x_envelope,
+            x_reason,
+        )
+
+    # Unique function name keeps OpenAPI operation IDs distinct per wrapper.
+    route.__name__ = f"proxy_{wrapper_name}"
+    return route
+
+
+async def _template_proxy_route(
+    name: str,
+    request: Request,
+    x_payment: str | None = Header(default=None),
+    payment_signature: str | None = Header(default=None),
+    x_payment_proof: str | None = Header(default=None),  # legacy alias
+    x_envelope: str | None = Header(default=None),
+    x_reason: str | None = Header(default=None),
+):
+    return await proxy_impl(
+        name, request, x_payment, payment_signature, x_payment_proof,
+        x_envelope, x_reason,
+    )
+
+
+for _wrapper_name in sorted(WRAPPERS):
+    # Register GET and POST separately so each OpenAPI operation gets a
+    # distinct operationId (x402scan keys endpoints by path+method).
+    for _method in ("GET", "POST"):
+        app.add_api_route(
+            f"/v1/{_wrapper_name}",
+            _make_proxy_route(_wrapper_name),
+            methods=[_method],
+            operation_id=f"proxy_{_wrapper_name}_{_method.lower()}",
+            name=f"proxy_{_wrapper_name}_{_method.lower()}",
+        )
+# Legacy template route: still served, but hidden from the OpenAPI schema so
+# scanners only probe the explicit, payment-challenged endpoints above.
+app.add_api_route(
+    "/v1/{name}",
+    _template_proxy_route,
+    methods=["GET", "POST"],
+    include_in_schema=False,
+    name="proxy_template",
+)
+
+# Hide every free (non-x402-paid) route from the OpenAPI schema — x402scan
+# treats any listed endpoint that doesn't return a 402 challenge as a scan
+# failure. Routes keep working; they are simply not advertised to scanners.
+_PAID_SCHEMA_PATHS = {f"/v1/{w}" for w in WRAPPERS}
+for _route in app.routes:
+    _path = getattr(_route, "path", None)
+    if (
+        _path is not None
+        and _path not in _PAID_SCHEMA_PATHS
+        and not _path.startswith(("/openapi", "/docs", "/redoc"))
+    ):
+        _route.include_in_schema = False
 
 
 if __name__ == "__main__":

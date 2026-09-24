@@ -91,6 +91,24 @@ PYEOF
 hdr=$(grep -i '^payment-required:' /tmp/wrap_headers.txt | sed 's/^[Pp][Aa][Yy][Mm][Ee][Nn][Tt]-//' | tr -d ' \r\n' | cut -d: -f2-)
 echo "$hdr" | $PY -c "import sys,base64,json; d=json.loads(base64.b64decode(sys.stdin.read().strip())); assert d['x402Version']==2 and d['accepts'][0]['scheme']=='exact', 'bad challenge'; print('PASS: PAYMENT-REQUIRED header decodes to valid v2 challenge')" && pass=$((pass+1)) || { echo "FAIL: header challenge decode"; fail=$((fail+1)); }
 
+echo "--- x402scan OpenAPI compatibility ---"
+check "openapi.json serves" 200 "$BASE/openapi.json"
+$PY - <<'PYEOF' && echo "PASS: openapi.json lists only the three explicit paid endpoints (GET+POST each)" && pass=$((pass+1)) || { echo "FAIL: openapi paid-endpoint shape"; fail=$((fail+1)); }
+import json
+spec = json.load(open('/tmp/wrap_test.json'))
+paths = set(spec['paths'])
+assert paths == {'/v1/weather-now', '/v1/crypto-price', '/v1/echo'}, f"openapi paths: {sorted(paths)}"
+for p in paths:
+    assert set(spec['paths'][p]) == {'get', 'post'}, f"{p} methods: {set(spec['paths'][p])}"
+    ids = [spec['paths'][p][m].get('operationId') for m in ('get', 'post')]
+    assert len(set(ids)) == 2, f"{p} duplicate operationIds"
+PYEOF
+check "explicit route 402 without params (paywall before validation)" 402 "$BASE/v1/weather-now"
+check "explicit echo 402 with params" 402 "$BASE/v1/echo?message=hi"
+check "explicit crypto-price POST 402" 402 -X POST "$BASE/v1/crypto-price"
+check "template route still serves (unknown wrapper -> 404)" 404 "$BASE/v1/nope"
+check "free /health still serves (hidden from schema only)" 200 "$BASE/health"
+
 echo "--- 402 with bad proof ---"
 check "bad proof -> 402" 402 -H "X-Payment: nope" "$BASE/v1/weather-now?latitude=43.7"
 

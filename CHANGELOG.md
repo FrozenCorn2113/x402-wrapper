@@ -1,5 +1,11 @@
 # CHANGELOG — x402-wrapper
 
+## 2026-09-24 (09:25) — x402scan OpenAPI compatibility (unblocks directory listing)
+- **Why:** x402scan's register form (https://www.x402scan.com/resources/register) auto-probes the literal paths in our openapi.json. It reported "21 endpoints with errors" — our schema listed 19 paths (free routes, POST-only admin routes, the un-probeable /v1/{name} template); every probe failed (free routes don't 402; POST-only routes 405 on GET).
+- **Fix:** each wrapper now has explicit GET+POST routes (/v1/weather-now, /v1/crypto-price, /v1/echo) that share the same proxy logic (paywall still runs before param validation, so even param-less probes get a 402 PaymentRequired challenge). The legacy /v1/{name} template route still works but is hidden from the schema, as are all free routes (health, catalog, llms.txt, skill.md, well-known manifests, admin) — they keep serving; scanners just don't probe them. openapi.json now lists exactly 3 paid endpoints with unique operationIds, zero warnings.
+- **Tests: 141/141** (+7 new: schema shape, explicit-route 402s, template-route compatibility, free-route serving).
+- Next: push main → manual Render deploy (auto-deploy unreliable) → retry x402scan registration.
+
 ## 2026-09-24 (09:25) — Dash: statement endpoint publishes rail fields (nanoswarm's composition-seam test)
 - **Envelope rail fields (nanoswarm's ask #1, live in main):** every spend receipt line now carries `settled_rail` (rail the seller accepted) + `buyer_rail` (rail the principal's money arrived on), and the envelope statement publishes `funded_rail`. v1 is Base-USDC only, so both read `base-usdc` today — that is the point: the first spend where they differ is a publicly visible cross-rail settle, exactly the seam test nanoswarm named. Additive only; tests 134/134 (+2 new rail checks). Rolling to production with the next deploy (manual Render deploy still required — auto-deploy unreliable).
 - Needs parent: manual Render deploy of this commit.
