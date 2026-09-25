@@ -387,6 +387,11 @@ def well_known_x402():
     """Unprotected discovery manifest for x402 directories (e.g. x402scan)."""
     base = core.public_base_url()
     catalog = core.catalog()
+    pay_to = catalog[0]["pay_to"] if catalog else None
+    # Catalog-wide price range string (BlockRun-style "$min-$max"), computed
+    # from the live config — never hardcoded so it can't drift.
+    prices = [float(e["price_usdc"]) for e in catalog]
+    price_range = f"${min(prices):g}-${max(prices):g}" if prices else ""
     return {
         "x402Version": core.X402_VERSION,
         "name": "x402-wrapper",
@@ -397,7 +402,54 @@ def well_known_x402():
         "network": core.network_to_caip2(os.environ.get("NETWORK", "").strip() or "base"),
         "asset": core.BASE_USDC_CONTRACT,
         "assetName": "USDC",
-        "payTo": catalog[0]["pay_to"] if catalog else None,
+        "payTo": pay_to,
+        # BlockRun-style per-call price-range string across the catalog.
+        "price_range_usdc": price_range,
+        # BlockRun-style compact resource list: METHOD + path strings.
+        "resources": [f"GET /v1/{e['name']}" for e in catalog],
+        # BlockRun-style payment object: who gets paid, on what rail, with
+        # what markup and timeout. We run direct-transfer settlement (no
+        # facilitator): the agent sends USDC to payTo, retries with the tx
+        # hash in X-Payment, and we verify on-chain before serving.
+        "payment": {
+            "payTo": pay_to,
+            "asset": core.BASE_USDC_CONTRACT,
+            "assetName": "USDC",
+            "network": core.network_to_caip2(os.environ.get("NETWORK", "").strip() or "base"),
+            "scheme": "x402 v2 (direct USDC transfer on Base)",
+            "facilitator": "none — direct transfer; this server verifies the "
+                           "transaction hash on-chain before delivery",
+            "timeout_seconds": 300,
+            "markup": "none — the listed per-call price is the total charge",
+        },
+        # BlockRun-style instructions block: read the 402, how to pay,
+        # envelope lane, retry rule, discovery links.
+        "instructions": (
+            "# x402-wrapper — agent buying guide\n\n"
+            "1. GET any endpoint below with no payment -> HTTP 402. "
+            "**Read the 402 for the exact amount that will actually be "
+            "charged** — manifest prices are per-call estimates.\n"
+            "2. Send USDC directly to `payTo` on Base (eip155:8453), then "
+            "retry the same request with the transaction hash in the "
+            "`X-Payment` header. We verify your tx on-chain before serving. "
+            "No facilitator, no signup, no API key.\n"
+            "3. Every call returns a machine-readable receipt with the "
+            "wrapper, the price charged, and a payment-proof fingerprint.\n\n"
+            "## Envelope lane (prepaid, skips the per-call 402)\n"
+            f"Principals can open a prepaid spend envelope with per-call caps "
+            f"and velocity limits: {base}/v1/envelopes — draws skip the 402 "
+            "flow and carry receipts. Statement: "
+            f"{base}/v1/envelopes/{{id}}.\n\n"
+            "## Retry rule\n"
+            "If the upstream provider fails, we still served your call against "
+            "the verified transfer. Retry with a fresh transfer, or route "
+            "through an envelope.\n\n"
+            "## Discovery links\n"
+            f"- skill.md: {base}/skill.md\n"
+            f"- agent-card: {base}/.well-known/agent-card.json\n"
+            f"- catalog: {base}/x402/catalog\n"
+            f"- llms.txt: {base}/llms.txt\n"
+        ),
         "endpoints": [
             {
                 "path": f"/v1/{e['name']}",

@@ -57,6 +57,23 @@ assert 'pricing' in props and 'endpoints' in props, 'schema incomplete'
 print('PASS: bazaar endpoints + pricing + schema verify')
 PYEOF
 [ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: bazaar structure"; fail=$((fail+1)); }
+$PY - <<'PYEOF'
+import json
+d = json.load(open('/tmp/wrap_test.json'))
+assert d['price_range_usdc'] == '$0.0001-$0.001', d['price_range_usdc']
+assert sorted(d['resources']) == sorted(['GET /v1/weather-now', 'GET /v1/crypto-price', 'GET /v1/echo']), d['resources']
+p = d['payment']
+assert p['payTo'] == d['payTo'], 'payment.payTo mismatch'
+assert p['network'] == 'eip155:8453', p['network']
+assert p['timeout_seconds'] == 300, p
+assert 'markup' in p and 'facilitator' in p, 'payment object incomplete'
+ins = d['instructions']
+assert 'Read the 402 for the exact amount' in ins, 'instructions missing 402 rule'
+assert '/v1/envelopes' in ins, 'instructions missing envelope lane'
+assert 'X-Payment' in ins, 'instructions missing X-Payment step'
+print('PASS: manifest payment object + instructions + resources + price range')
+PYEOF
+[ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: manifest BlockRun-playbook block"; fail=$((fail+1)); }
 
 echo "--- llms.txt ---"
 check "llms.txt" 200 "$BASE/llms.txt"

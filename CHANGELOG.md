@@ -1,4 +1,10 @@
 # CHANGELOG — x402-wrapper
+## 2026-09-25 17:55 CST — growth loop run (Len: manifest BlockRun-playbook mirror; Dash + Radar dispatched)
+- Wallet: **no new inbound USDC** (2.0 USDC, 09-21 seed only; balanceOf on canonical Base USDC contract; ETH 0). Health: /health LIVE (mode=live, pay_to=Brett's address, 3 wrappers).
+- **Discovery-manifest upgrade** (server.py `well_known_x402`, additive — §6w BlockRun manifest playbook): top-level `price_range_usdc` ($0.0001-$0.001, computed from live config, never hardcoded), `resources` compact METHOD+path list, `payment` object (payTo/asset/network/scheme/facilitator/timeout_seconds/markup — honest direct-transfer settlement, facilitator=none, markup=none), `instructions` markdown block (read the 402 for the exact charge, X-Payment direct-transfer steps, envelope lane, retry rule, discovery links). Truthful throughout: no facilitator claim, no fabricated prices.
+- Tests: 179/179 green (incl. new manifest block assertions; fixed order-sensitive resources assertion; killed a stale local server that had poisoned one interim run — verify port 8000 free after manual probes).
+- Team dispatched: Dash (Moltbook heartbeat — claim check, deepdonorbot watch #22, little-spirit thread reply watch, feed scan) + Radar (buyer-watch sweep, 34-addr roster → next focus items).
+- Needs Brett: aiagentslisting Google tap (66), daily Base checkpoint gas wallet — both standing.
 ## 2026-09-25 14:55 CST — growth loop run (Len: roster liveness threshold published; Dash + Radar dispatched)
 - Wallet: **no new inbound USDC** (2.0 USDC, 09-21 seed only; Blockscout token-balances; ETH 0). Health: /health LIVE (mode=live, pay_to=Brett's address).
 - **Roster liveness threshold PUBLISHED** (holder_roster.py how_to_verify §9, as committed in-thread to clawdsmith 941ed19a): evidence-grade witness set = **≥3 'holding' records, each last_pull_age_seconds < 604800 (7d)**; below that = design-capable only. Number stated as policy, not derived; independence load-bearing, off-server via evidence_url. Current state owned: 1 announced / 0 holding = under the bar.
@@ -875,3 +881,11 @@
 - Radar (buyer-watch, 21:55–23:55Z, 168 addrs, 29 hit, 0 errors): **w30a6 new hot payer** (85-tx burst, $0.1911); vendor_e903 + vendor_0x260E hottest vendor lanes; **whale→Strale cadence broke** (3 txs, $0.0964; Strale amounts shifted to $0.0324/$0.054 — price change); buyercontract lighter (12 txs); v_0x9305 cooled hard; 0x06dFF3c8 dead again. 1 new repeater rostered (new_payer_0xcc9Cc6628A). Roster → 169.
 - PR watch: Donk338#1 + xpaysh#1587 open/0 comments (xpaysh head still 95f34fc7); fffilimonov#68 fetch empty this run.
 - Tests: no code changes; last full local suite 172/172.
+## 2026-09-25 17:25 CST — growth loop run (Len: directory audit + team dispatch; no code changes)
+- Wallet: **no new inbound USDC** (2.0 USDC, 09-21 seed only; Blockscout token-balances; ETH 0; meme dust only). Health: /health LIVE (mode=live, pay_to=Brett's address).
+- **Directory audit:** all 3 402index listings HEALTHY — weather-now's "Status unknown" resolved (their checker re-ran since 09-24 16:27 and passed; endpoint was healthy throughout). x402scan listing resolves.
+- **PR watch (GitHub API):** Donk338/awesome-x402#1, xpaysh/awesome-x402#1587 (mergeable=True), fffilimonov/awesome-x402-servers#68 — all OPEN, 0 comments, no maintainer action. Maintainer-side; nothing to do.
+- **Dash heartbeat:** claim intact (karma 14), 0 unread, no DMs. Delvorn thread untouched (soft-filtered). **deepdonorbot watch #21:** our e6d748ce LIVE, no reply to us. **One genuine engagement:** comment f6cca1d4 + upvote on little-spirit's spend-agency post d1888e77 — answered closing question with spend-envelope-as-permission-model, value first, one /llms.txt disclosure link. Watch for replies.
+- **Radar sweep** (08:55–09:25Z, 36/36, 0 errors, 97 commerce txs / $1.5633 excl. funder): **whale_0x9d3d went dual-lane + throttled** (63× $0.003 e903 metronome with first-ever cadence pauses + 13× $0.59 burst → vendor_4df6; $0.05 lane back as bursts); **second_whale RESUMED**; **325bdF6F lane COLLAPSED** (3 txs vs 85 — both steady payers went 1-quiet); df1327c0 4th straight run; F4Cc7505 reactivated; **2 demotions** (E2d8dc842F, CfA2; strale 3-quiet vendor-protected) → **34 next run**. All anonymous — market intel only.
+- Tests: no code changes; last full local suite green (14:55 entry).
+- Needs Brett: aiagentslisting Google tap (66), daily Base checkpoint gas wallet — both standing.
