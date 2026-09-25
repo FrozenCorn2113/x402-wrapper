@@ -48,10 +48,14 @@ per-call max, allowlist, velocity, reason-required, rail, schema version).
 The principal recomputes the hash over the CURRENT mandate; a mismatch voids
 the credit's context. The store is only the messenger — it cannot soften a
 changed mandate into a valid-looking row. Honest gaps, stated publicly:
-row deletion still needs sequence continuity as a separate control; v1 has
-no spend keys (operator-issued mandate, disclosed); Base USDC has no memo,
-so on-chain binding rides an EIP-712 attestation in v2 (falsifiable claim,
-not trustless); task_scope drift semantics are an open design question.
+row deletion is detectable by a third-party auditor WITHOUT trusting our API
+via the hash-chained spend rows (seq/prev_hash/row_hash per envelope, the
+spend_tip_hash published for the buyer to pin, verify_chain() as the pure
+verifier) — tamper-evident TO A WITNESS, not tamper-proof in a vacuum; v1
+has no spend keys (operator-issued mandate, disclosed); Base USDC has no
+memo, so on-chain binding rides an EIP-712 attestation in v2 (falsifiable
+claim, not trustless); task_scope drift semantics are an open design
+question.
 """
 from __future__ import annotations
 
@@ -100,8 +104,9 @@ _velocity: dict[str, list[float]] = {}
 # over the CURRENT mandate; a mismatch means the credit's context changed and
 # the credit is VOID — our store is only the messenger. Disclosing the hole
 # beats a soft field that looks like control and is not.
-# Honest gaps (stated publicly to neodelvorn 2026-09-25): row deletion still
-# needs sequence continuity as a separate control; v1 has no spend keys, so
+# Honest gaps (stated publicly to neodelvorn 2026-09-25): row deletion is now
+# detectable via the hash-chained spend rows (sequence continuity as the
+# control, verify_chain() as the pure verifier); v1 has no spend keys, so
 # there is no spend_key_id input (operator-issued mandate, disclosed); Base
 # USDC has no memo, so on-chain binding rides an EIP-712 attestation in v2
 # (falsifiable claim, not trustless). task_scope drift semantics are an open
@@ -120,6 +125,16 @@ def mandate_snapshot(env: dict) -> dict:
         "velocity_per_min": env.get("velocity_per_min"),
         "reason_required": bool(env.get("reason_required")),
         "rail": env.get("funded_rail", FUNDED_RAIL),
+        # Receipt window (2026-09-25, neodelvorn's answer): bounded receipt
+        # validity lives in the hashed mandate fields, not the chain, so a
+        # late auditor with an old tip distinguishes expired-but-honest
+        # (window lapsed, links intact) from deleted (broken link/seq gap).
+        "receipt_window_seconds": env.get(
+            "receipt_window_seconds", RECEIPT_WINDOW_DEFAULT_SECONDS
+        ),
+        "receipt_window_grace_seconds": env.get(
+            "receipt_window_grace_seconds", RECEIPT_WINDOW_GRACE_DEFAULT_SECONDS
+        ),
         "mandate_schema_version": MANDATE_SCHEMA_VERSION,
     }
 
@@ -139,7 +154,176 @@ def verify_credit_mandate(env: dict, credit: dict) -> str:
     recorded = credit.get("mandate_hash")
     if not recorded:
         return "legacy"
-    return "bound" if recorded == mandate_hash(mandate_snapshot(env)) else "void"
+    row_mandate = credit.get("mandate") or {}
+    current = mandate_snapshot(env)
+    # Additive schema evolution: compare only the fields the row recorded,
+    # so a later mandate-schema addition can't false-void old rows. An
+    # actual mandate change on a recorded field still voids.
+    current_trimmed = {k: v for k, v in current.items() if k in row_mandate}
+    return "bound" if recorded == mandate_hash(current_trimmed) else "void"
+
+
+# ---------------------------------------------------------------------------
+# SPEND CHAIN (2026-09-25, co-designed with neodelvorn on Moltbook).
+# Hash-chained rows per spend key (v1: the spend key IS the envelope id).
+# Every chain row carries seq (monotonic int per envelope, starting 1),
+# prev_hash (row_hash of the previous row, null at genesis), and row_hash =
+# sha256 over the canonical row (seq, prev_hash, payload, mandate_hash).
+# mandate_hash stays POLICY-ONLY (his answer): the chain tip is never folded
+# into it; a separate spend_tip_hash (the head row_hash) is published for
+# the buyer's agent to pin. Honest bound, stated publicly: tamper-evident
+# TO A WITNESS (the pinning buyer), not tamper-proof in a vacuum.
+# ---------------------------------------------------------------------------
+# Row fields that are chain bookkeeping or statement annotations — excluded
+# from the hashed payload. Writer and verifier must agree exactly.
+CHAIN_META_FIELDS = frozenset(
+    {"seq", "prev_hash", "row_hash", "chain", "mandate_status"}
+)
+# Receipt window: how long a pinned tip stays "fresh" for the auditor.
+# Lives in the hashed mandate fields (velocity-window precedent), not the
+# chain — a late auditor with an old tip distinguishes expired-but-honest
+# (window lapsed, links intact) from deleted (broken link / seq gap).
+RECEIPT_WINDOW_DEFAULT_SECONDS = 86400  # 24h
+RECEIPT_WINDOW_GRACE_DEFAULT_SECONDS = 3600  # 1h
+
+
+def row_payload(row: dict) -> dict:
+    """The hashed payload of a chain row: everything except chain
+    bookkeeping, statement annotations, and mandate_hash (which enters the
+    canonical form as its own field)."""
+    return {
+        k: v
+        for k, v in row.items()
+        if k not in CHAIN_META_FIELDS and k != "mandate_hash"
+    }
+
+
+def chain_row_hash(
+    seq: int,
+    prev_hash: str | None,
+    payload: dict,
+    mandate_hash_value: str | None,
+) -> str:
+    """Canonical row hash. Same canonicalizer as mandate_hash()."""
+    canonical = json.dumps(
+        {
+            "seq": seq,
+            "prev_hash": prev_hash,
+            "payload": payload,
+            "mandate_hash": mandate_hash_value,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _chain_append(env: dict, row: dict) -> dict:
+    """Assign seq/prev_hash/row_hash to a new chain row and advance the
+    envelope's chain head. Caller must hold _lock. The row must already
+    carry mandate_hash (the mandate true right now)."""
+    seq = int(env.get("chain_seq") or 0) + 1
+    prev = env.get("chain_tip")  # None at genesis
+    rh = chain_row_hash(seq, prev, row_payload(row), row.get("mandate_hash"))
+    row["seq"] = seq
+    row["prev_hash"] = prev
+    row["row_hash"] = rh
+    env["chain_seq"] = seq
+    env["chain_tip"] = rh
+    return row
+
+
+def verify_chain(
+    rows: list[dict] | None, pinned_tip: dict | str | None = None
+) -> tuple[bool, dict]:
+    """Pure verifier for a hash-chained row set, as served by statement():
+    the chained credit_history rows + chained receipt lines (spends, denied),
+    in any order. Legacy rows (no row_hash) are skipped.
+
+    pinned_tip: None, a "sha256:..." hash, or {"row_hash":..., "seq":...} —
+    the tip the auditor pinned earlier. When given, the first served row
+    must link to it; the auditor is then checking only the rows AFTER the
+    pin, exactly the forgo scenario.
+
+    Returns (ok, detail). ok=False means FAIL CLOSED: deletion or tamper
+    was detected without trusting any seller endpoint.
+    """
+    pin_hash = pin_seq = None
+    if pinned_tip is not None:
+        if isinstance(pinned_tip, dict):
+            pin_hash, pin_seq = pinned_tip.get("row_hash"), pinned_tip.get("seq")
+        else:
+            pin_hash = str(pinned_tip)
+    chained = sorted(
+        (
+            r
+            for r in (rows or [])
+            if r.get("row_hash") and isinstance(r.get("seq"), int)
+        ),
+        key=lambda r: r["seq"],
+    )
+    detail: dict = {"rows_checked": len(chained)}
+    if pin_hash is not None:
+        detail["pinned_tip"] = pin_hash
+        detail["pinned_seq"] = pin_seq
+    if not chained:
+        # No new rows since the pinned tip (or an all-legacy/empty chain):
+        # consistent, nothing to check.
+        return True, {**detail, "result": "no chained rows to check"}
+    first = chained[0]
+    if pin_hash is not None:
+        if first["prev_hash"] != pin_hash or (
+            pin_seq is not None and first["seq"] != pin_seq + 1
+        ):
+            return False, {
+                **detail,
+                "result": (
+                    "FAIL: first served row does not link to the pinned tip "
+                    "(rows deleted or forged after the pin)"
+                ),
+            }
+        detail["pinned_tip_linked"] = True
+    elif first["prev_hash"] is not None:
+        return False, {
+            **detail,
+            "result": "FAIL: chain does not anchor to genesis (early rows missing)",
+        }
+    prev = None
+    for row in chained:
+        if prev is not None:
+            if row["seq"] != prev["seq"] + 1:
+                return False, {
+                    **detail,
+                    "result": (
+                        f"FAIL: seq gap {prev['seq']} -> {row['seq']} "
+                        "(a row was deleted)"
+                    ),
+                }
+            if row["prev_hash"] != prev["row_hash"]:
+                return False, {
+                    **detail,
+                    "result": (
+                        f"FAIL: broken prev_hash link at seq {row['seq']} "
+                        "(a row was deleted or replaced)"
+                    ),
+                }
+        expect = chain_row_hash(
+            row["seq"], row["prev_hash"], row_payload(row),
+            row.get("mandate_hash"),
+        )
+        if row["row_hash"] != expect:
+            return False, {
+                **detail,
+                "result": (
+                    f"FAIL: row_hash mismatch at seq {row['seq']} "
+                    "(row content was tampered)"
+                ),
+            }
+        prev = row
+    detail.update(
+        {"head_seq": prev["seq"], "head_hash": prev["row_hash"], "result": "ok"}
+    )
+    return True, detail
 
 
 def usd_to_atomic(usd: float) -> int:
@@ -208,6 +392,8 @@ def open_envelope(
     velocity_per_min: object,
     reason_required: object,
     valid_wrappers: set[str],
+    receipt_window_seconds: object = None,
+    receipt_window_grace_seconds: object = None,
 ) -> tuple[dict | None, str | None]:
     """Validate + create an envelope. Returns (record, None) or (None, err)."""
     try:
@@ -228,6 +414,26 @@ def open_envelope(
         return None, "velocity_per_min must be an integer"
     if not (1 <= velocity <= 120):
         return None, "velocity_per_min must be between 1 and 120"
+    # Receipt window (neodelvorn's answer): bounded receipt validity is a
+    # mandate term, so it is hashed with the mandate, not the chain.
+    if receipt_window_seconds is None:
+        rw_seconds = RECEIPT_WINDOW_DEFAULT_SECONDS
+    else:
+        try:
+            rw_seconds = int(receipt_window_seconds)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None, "receipt_window_seconds must be a positive integer"
+        if rw_seconds <= 0:
+            return None, "receipt_window_seconds must be a positive integer"
+    if receipt_window_grace_seconds is None:
+        rw_grace = RECEIPT_WINDOW_GRACE_DEFAULT_SECONDS
+    else:
+        try:
+            rw_grace = int(receipt_window_grace_seconds)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return None, "receipt_window_grace_seconds must be a positive integer"
+        if rw_grace <= 0:
+            return None, "receipt_window_grace_seconds must be a positive integer"
     wallet = str(principal_wallet or "").strip().lower()
     if not _WALLET_RE.match(wallet):
         return None, "principal_wallet must be a 0x Ethereum address"
@@ -257,14 +463,25 @@ def open_envelope(
         "total_topped_up_atomic": usd_to_atomic(amount),
         "last_topup_at": now_iso(),
         "last_topup_tx": None,
+        # Receipt window is a mandate term (hashed with the mandate, not
+        # the chain). Chain state: chain_seq/chain_tip advance with every
+        # chained row (credits, spends, denied rows).
+        "receipt_window_seconds": rw_seconds,
+        "receipt_window_grace_seconds": rw_grace,
+        "chain_seq": 0,
+        "chain_tip": None,
         # Initial operator-attested credit, observable like any other.
         "credits": [],
     }
     # The initial credit is bound to the exact mandate terms at open time
     # (neodelvorn's mandate_hash design): the snapshot must come from the
-    # finished record, so it is appended after the record is built.
+    # finished record, so it is appended after the record is built. It is
+    # also the chain's genesis row (seq 1, prev_hash null).
     record["credits"] = [
-        _credit_entry(None, usd_to_atomic(amount), mandate_snapshot(record))
+        _chain_append(
+            record,
+            _credit_entry(None, usd_to_atomic(amount), mandate_snapshot(record)),
+        )
     ]
     with _lock:
         envs = _load()
@@ -349,6 +566,7 @@ def topup_envelope(
         # against the mandate true right now; a later mandate change voids
         # this row's context on recompute.
         credit = _credit_entry(tx_hash, atomic, mandate_snapshot(env))
+        _chain_append(env, credit)
         env.setdefault("credits", []).append(credit)
         _append_envelope_receipt_line(envelope_id, {
             "type": "credit",
@@ -396,6 +614,37 @@ def _decline(error: str) -> dict:
     return {"status": 402, "code": "ENVELOPE_DECLINED", "error": error}
 
 
+def _record_denied(
+    env: dict,
+    *,
+    rule_id: str,
+    wrapper: str,
+    price_atomic: int,
+    reason: str | None,
+    error: str,
+) -> dict:
+    """First-class denied chain row (neodelvorn's denied-action log, his
+    "silent 41%" point): a refused attempt is recorded with outcome=denied
+    and the rule_id that fired, consuming no spend. "An audit that only
+    stores what executed is a victory reel." Caller must hold _lock; the
+    row joins the envelope's hash chain like any other row."""
+    row = {
+        "type": "denied",
+        "outcome": "denied",
+        "rule_id": rule_id,
+        "ts": now_iso(),
+        "envelope_id": env["id"],
+        "wrapper": wrapper,
+        "price_atomic": price_atomic,
+        "reason": reason,
+        "error": error,
+        "mandate_hash": mandate_hash(mandate_snapshot(env)),
+    }
+    _chain_append(env, row)
+    _append_envelope_receipt_line(env["id"], row)
+    return row
+
+
 def try_spend(
     envelope_id: object,
     wrapper_name: str,
@@ -419,43 +668,70 @@ def try_spend(
     with _lock:
         env = _load().get(env_id)
         if env is None:
+            # No envelope exists, so there is no chain to append the denial
+            # to: the decline is returned without a denied row (documented).
             return None, _decline(f"unknown envelope id '{env_id}'")
+
+        def deny(
+            rule_id: str,
+            error: str,
+            status: int = 402,
+            code: str = "ENVELOPE_DECLINED",
+        ) -> tuple[dict | None, dict | None]:
+            """Refuse AND record the refusal as a chained denied row."""
+            _record_denied(
+                env,
+                rule_id=rule_id,
+                wrapper=wrapper_name,
+                price_atomic=price_atomic,
+                reason=reason_s,
+                error=error,
+            )
+            _save()
+            return None, {"status": status, "code": code, "error": error}
+
         if env["status"] != "active":
-            return None, _decline(
-                f"envelope {env_id} is {env['status']}; drawdown refused"
+            return deny(
+                "envelope_not_active",
+                f"envelope {env_id} is {env['status']}; drawdown refused",
             )
         if env.get("reason_required") and not reason_s:
-            return None, {
-                "status": 400,
-                "code": "REASON_REQUIRED",
-                "error": (
+            return deny(
+                "reason_required",
+                (
                     "this envelope's principal requires an explicit reason "
                     "for every call: retry with header "
                     "X-Reason: <why you are making this call>"
                 ),
-            }
+                status=400,
+                code="REASON_REQUIRED",
+            )
         if wrapper_name not in (env.get("allowed_paths") or []):
-            return None, _decline(
+            return deny(
+                "wrapper_not_allowed",
                 f"'{wrapper_name}' is not in this envelope's allowed endpoints "
-                f"({', '.join(env.get('allowed_paths') or [])})"
+                f"({', '.join(env.get('allowed_paths') or [])})",
             )
         if price_atomic > env["per_call_cap_atomic"]:
-            return None, _decline(
+            return deny(
+                "per_call_cap_exceeded",
                 f"endpoint price ({price_atomic} atomic USDC) exceeds this "
-                f"envelope's per-call cap ({env['per_call_cap_atomic']} atomic)"
+                f"envelope's per-call cap ({env['per_call_cap_atomic']} atomic)",
             )
         if env["balance_atomic"] < price_atomic:
-            return None, _decline(
+            return deny(
+                "insufficient_balance",
                 f"envelope balance ({env['balance_atomic']} atomic USDC) is "
-                f"below the endpoint price ({price_atomic} atomic)"
+                f"below the endpoint price ({price_atomic} atomic)",
             )
         now = time.time()
         window = [t for t in _velocity.get(env_id, []) if now - t < 60]
         if len(window) >= env["velocity_per_min"]:
             _velocity[env_id] = window
-            return None, _decline(
+            return deny(
+                "velocity_exceeded",
                 f"envelope velocity cap tripped ({env['velocity_per_min']}/min); "
-                "wait before retrying"
+                "wait before retrying",
             )
         # All checks passed: commit atomically.
         before = env["balance_atomic"]
@@ -480,22 +756,49 @@ def try_spend(
 
 def finalize_spend(pending: dict, upstream_status: int, latency_ms: int) -> dict:
     """Write the envelope receipt line (authorization -> delivery) and return
-    the receipt object to attach to the agent response."""
-    line = {
-        "type": "spend",
-        "call_id": pending["call_id"],
-        "ts": pending["ts"],
-        "wrapper": pending["wrapper"],
-        "price_atomic": pending["price_atomic"],
-        "settled_rail": SETTLED_RAIL,
-        "buyer_rail": pending.get("buyer_rail", FUNDED_RAIL),
-        "reason": pending["reason"],
-        "upstream_status": upstream_status,
-        "latency_ms": latency_ms,
-        "balance_before_atomic": pending["balance_before_atomic"],
-        "balance_after_atomic": pending["balance_after_atomic"],
-    }
-    _append_envelope_receipt_line(pending["envelope_id"], line)
+    the receipt object to attach to the agent response. The spend is a
+    chained row: it carries the explicit terminal event of the upstream
+    call, so no row ever earns a success state without one."""
+    with _lock:
+        env = _load().get(pending["envelope_id"])
+        mh = mandate_hash(mandate_snapshot(env)) if env is not None else None
+        # Terminal-event check (neodelvorn's "silent 41%"): no row earns a
+        # success state unless its last span is an explicit terminal event.
+        # The upstream call's completion IS the terminal event, recorded
+        # here explicitly. A timeout surfaces from core.forward as
+        # upstream_status 502 ("upstream unreachable") with the open call
+        # id: it is recorded as upstream_error, never quietly as success.
+        succeeded = (
+            isinstance(upstream_status, int) and 200 <= upstream_status < 300
+        )
+        line = {
+            "type": "spend",
+            "call_id": pending["call_id"],
+            "ts": pending["ts"],
+            "wrapper": pending["wrapper"],
+            "price_atomic": pending["price_atomic"],
+            "settled_rail": SETTLED_RAIL,
+            "buyer_rail": pending.get("buyer_rail", FUNDED_RAIL),
+            "reason": pending["reason"],
+            "upstream_status": upstream_status,
+            "latency_ms": latency_ms,
+            "balance_before_atomic": pending["balance_before_atomic"],
+            "balance_after_atomic": pending["balance_after_atomic"],
+            "status": "success" if succeeded else "upstream_error",
+            "terminal_event": {
+                "kind": "upstream_terminal",
+                "call_id": pending["call_id"],
+                "upstream_status": upstream_status,
+                "terminal": True,
+            },
+            "mandate_hash": mh,
+        }
+        if env is not None:
+            _chain_append(env, line)
+            _save()
+        _append_envelope_receipt_line(pending["envelope_id"], line)
+        tip = env.get("chain_tip") if env is not None else None
+        tip_seq = int(env.get("chain_seq") or 0) if env is not None else 0
     return {
         "type": "envelope",
         "envelope_id": pending["envelope_id"],
@@ -508,6 +811,11 @@ def finalize_spend(pending: dict, upstream_status: int, latency_ms: int) -> dict
         "balance_remaining_atomic": pending["balance_after_atomic"],
         "upstream_status": upstream_status,
         "latency_ms": latency_ms,
+        # Chain position, so the buyer's agent can pin the tip (the cheap
+        # witness in the tamper-evident design) straight from the response.
+        "seq": tip_seq or None,
+        "row_hash": tip,
+        "spend_tip_hash": tip,
         # Signed-style receipt: this is an OPERATOR-ISSUED mandate recorded
         # after verified on-chain top-up (v1). Principal-signed mandates
         # (EIP-712) are v2 — never claimed here.
@@ -530,7 +838,13 @@ def statement(envelope_id: str) -> dict | None:
         try:
             lines = path.read_text().splitlines()
             for raw in lines[-_MAX_STATEMENT_RECEIPTS:]:
-                receipts.append(json.loads(raw))
+                r = json.loads(raw)
+                # Chain backfill convention: spend/denied lines written
+                # before hash-chained rows existed carry no row_hash; the
+                # verifier skips them.
+                if r.get("type") in ("spend", "denied") and "row_hash" not in r:
+                    r["chain"] = "legacy"
+                receipts.append(r)
         except Exception:
             pass
     # Mandate recompute-bind (2026-09-25, neodelvorn): each credit row is
@@ -541,6 +855,10 @@ def statement(envelope_id: str) -> dict | None:
     for c in env.get("credits", []):
         annotated = dict(c)
         annotated["mandate_status"] = verify_credit_mandate(env, c)
+        # Chain backfill convention: credit rows written before hash-chained
+        # rows existed carry no seq/row_hash; the verifier skips them.
+        if "row_hash" not in annotated:
+            annotated["chain"] = "legacy"
         credits.append(annotated)
     return {
         "envelope_id": env["id"],
@@ -557,6 +875,15 @@ def statement(envelope_id: str) -> dict | None:
             "reason_required": env["reason_required"],
         },
         "total_topped_up_atomic": env["total_topped_up_atomic"],
+        # Spend chain (2026-09-25, neodelvorn co-design): hash-chained rows
+        # per envelope. spend_tip_hash is the chain head (row_hash of the
+        # latest row) — the buyer's agent pins it; verify_chain() re-walks
+        # the chain from a pinned tip and FAILS CLOSED on deletion/tamper.
+        # Honest bound: tamper-evident TO A WITNESS, not tamper-proof in a
+        # vacuum. mandate_hash stays policy-only and is never folded with
+        # the tip.
+        "spend_tip_hash": env.get("chain_tip"),
+        "chain_tip_seq": int(env.get("chain_seq") or 0),
         # The current mandate and its fingerprint: the principal recomputes
         # mandate_hash over their own mandate terms and compares — that
         # comparison, not our store, is what voids stale credits.

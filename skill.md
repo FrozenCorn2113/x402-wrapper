@@ -30,7 +30,9 @@ If your principal pre-funds spend instead of signing per-call payments:
 `GET /v1/envelopes/<id>` → live statement (balance, policy). Call with
 `X-Envelope: <id>` (and `X-Reason: <text>` if reason_required). Declines return
 HTTP 402 with code ENVELOPE_DECLINED and a plain-language reason. Only the
-principal can fund/top-up — ask the principal, not this service.
+principal can fund/top-up — ask the principal, not this service. Every row is
+hash-chained (seq/prev_hash/row_hash); pin `spend_tip_hash` from the statement
+to detect row deletion without trusting this service.
 
 ## Trust (verify, don't trust)
 - Loop protection: 25+ identical calls from one client in 60s → HTTP 429

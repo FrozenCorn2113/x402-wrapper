@@ -469,6 +469,84 @@ assert envelopes.verify_credit_mandate(env, {}) == 'legacy', 'pre-hash rows read
 print('PASS: mandate_hash binds credit to mandate terms; void-on-change verified')
 PYEOF
 [ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: mandate_hash bind/void"; fail=$((fail+1)); }
+# Spend chain (2026-09-25, neodelvorn co-design): every row — credits,
+# spends, denied attempts — is hash-chained per envelope (seq/prev_hash/
+# row_hash); the statement publishes spend_tip_hash for the auditor to pin.
+grep -q '"spend_tip_hash": *"sha256:' /tmp/wrap_test.json && echo "PASS: statement publishes spend_tip_hash" && pass=$((pass+1)) || { echo "FAIL: spend_tip_hash"; fail=$((fail+1)); }
+$PY - <<'PYEOF'
+import json
+d = json.load(open('/tmp/wrap_test.json'))
+c = d['credit_history'][0]
+assert c['seq'] == 1 and c['prev_hash'] is None and c['row_hash'].startswith('sha256:'), 'genesis credit row must be chained seq=1'
+spends = [r for r in d['receipts'] if r.get('type') == 'spend']
+assert spends, 'expected a spend receipt line'
+s = spends[0]
+assert s['seq'] == 2 and s['prev_hash'] == c['row_hash'], 'spend row must continue the chain'
+assert s['status'] == 'success' and s['terminal_event']['terminal'] is True, 'spend row must carry the explicit terminal event'
+assert d['spend_tip_hash'] == s['row_hash'] and d['chain_tip_seq'] == 2, 'tip must be the spend row hash'
+print('PASS: credit + spend rows hash-chained; tip published')
+PYEOF
+[ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: chain linkage"; fail=$((fail+1)); }
+# Forgo acceptance test (ship gate): delete row N, keep N+1 — an auditor
+# with the tip pinned at N-1 must FAIL CLOSED without trusting our API.
+# Runs against an isolated temp ledger so server state is untouched.
+$PY - <<'PYEOF'
+import json, sys, tempfile
+from pathlib import Path
+sys.path.insert(0, '.')
+import envelopes
+tmp = Path(tempfile.mkdtemp())
+envelopes.ENVELOPE_DIR = tmp / "envelopes"
+envelopes.ENVELOPE_FILE = envelopes.ENVELOPE_DIR / "envelopes.json"
+envelopes.RECEIPT_DIR = tmp / "receipts"
+envelopes._envelopes = None
+W = "0x1234567890abcdef1234567890abcdef12345678"
+env, err = envelopes.open_envelope(principal_wallet=W, label="forgo", usd_amount=5,
+    per_call_cap=1, allowed_paths=["echo"], velocity_per_min=60,
+    reason_required=False, valid_wrappers={"echo"})
+assert err is None, err
+eid = env["id"]
+env, err = envelopes.topup_envelope(eid, 1, "0xtopup")
+assert err is None, err
+p1, e1 = envelopes.try_spend(eid, "echo", 100, "forgo-1")
+assert e1 is None, e1
+envelopes.finalize_spend(p1, 200, 12)
+px, ex = envelopes.try_spend(eid, "weather-now", 500, "forgo-deny")
+assert ex is not None and ex["code"] == "ENVELOPE_DECLINED", "bad wrapper must decline"
+assert ex and envelopes._load()[eid]["chain_seq"] == 4, "denied attempt must consume a chain seq"
+p2, e2 = envelopes.try_spend(eid, "echo", 100, "forgo-2")
+assert e2 is None, e2
+envelopes.finalize_spend(p2, 200, 9)
+st = envelopes.statement(eid)
+rows = [r for r in st["credit_history"] if r.get("row_hash")] + \
+       [r for r in st["receipts"] if r.get("row_hash")]
+seqs = [r["seq"] for r in sorted(rows, key=lambda r: r["seq"])]
+assert seqs == [1, 2, 3, 4, 5], f"expect 5 chained rows (credit, topup, spend, denied, spend), got {seqs}"
+denied = [r for r in rows if r.get("type") == "denied"]
+assert len(denied) == 1 and denied[0]["outcome"] == "denied" and \
+    denied[0]["rule_id"] == "wrapper_not_allowed", "denied row must carry outcome + rule_id"
+# Case A (forgo, pinned tip): auditor pinned tip@2 (row N-1, N=3); attacker
+# deleted row 3 (the spend), row 4 kept. Must FAIL CLOSED.
+pin2 = {"row_hash": rows[1]["row_hash"], "seq": 2}
+attacked = [r for r in rows if r["seq"] != 3]
+ok, detail = envelopes.verify_chain(attacked, pin2)
+assert ok is False, f"forgo case must fail closed, got {detail}"
+# Case B (no pin): the seq gap + broken link must still fail closed.
+ok, detail = envelopes.verify_chain(attacked, None)
+assert ok is False, f"unpinned gap must fail closed, got {detail}"
+# Case C (tamper): flip a payload byte; the hash recompute must catch it.
+tampered = [dict(r) for r in rows]
+tampered[0]["amount_atomic"] = 999999999
+ok, detail = envelopes.verify_chain(tampered, None)
+assert ok is False, f"tampered row must fail closed, got {detail}"
+# Case D (negative control): the intact chain verifies, pinned or not.
+ok, detail = envelopes.verify_chain(rows, None)
+assert ok is True, f"intact chain must verify, got {detail}"
+ok, detail = envelopes.verify_chain(rows[2:], pin2)
+assert ok is True, f"rows served after a pinned tip must verify, got {detail}"
+print("PASS: forgo acceptance test — deletion and tamper fail closed, intact chain verifies")
+PYEOF
+[ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: forgo acceptance test"; fail=$((fail+1)); }
 grep -q '"settled_rail": *"base-usdc"' /tmp/wrap_test.json && grep -q '"buyer_rail": *"base-usdc"' /tmp/wrap_test.json && echo "PASS: receipt lines carry settled_rail + buyer_rail" && pass=$((pass+1)) || { echo "FAIL: receipt rail fields"; fail=$((fail+1)); }
 check "catalog advertises envelope_support" 200 "$BASE/v1"
 grep -q '"envelope_support": *true' /tmp/wrap_test.json && echo "PASS: envelope_support:true in /v1" && pass=$((pass+1)) || { echo "FAIL: envelope_support"; fail=$((fail+1)); }
@@ -506,6 +584,21 @@ check "velocity call 1 -> 200" 200 -H "X-Envelope: $ENV_VEL" "$BASE/v1/echo?msg=
 check "velocity call 2 -> 200" 200 -H "X-Envelope: $ENV_VEL" "$BASE/v1/echo?msg=env-vel-2"
 check "velocity call 3 -> 402" 402 -H "X-Envelope: $ENV_VEL" "$BASE/v1/echo?msg=env-vel-3"
 grep -q 'ENVELOPE_DECLINED' /tmp/wrap_test.json && grep -q 'velocity cap' /tmp/wrap_test.json && echo "PASS: velocity cap trips" && pass=$((pass+1)) || { echo "FAIL: velocity cap"; fail=$((fail+1)); }
+# Denied-action log (neodelvorn's "silent 41%"): the refused attempt is a
+# first-class chained row with outcome=denied + rule_id, consuming no spend.
+check "statement shows denied row" 200 "$BASE/v1/envelopes/$ENV_VEL"
+grep -q '"type": *"denied"' /tmp/wrap_test.json && grep -q '"rule_id": *"velocity_exceeded"' /tmp/wrap_test.json && grep -q '"outcome": *"denied"' /tmp/wrap_test.json && echo "PASS: denied row recorded with rule_id" && pass=$((pass+1)) || { echo "FAIL: denied row"; fail=$((fail+1)); }
+$PY - <<'PYEOF'
+import json
+d = json.load(open('/tmp/wrap_test.json'))
+denied = [r for r in d['receipts'] if r.get('type') == 'denied']
+assert denied, 'expected a denied receipt line'
+x = denied[0]
+assert x['seq'] == 4 and x['prev_hash'] and x['row_hash'].startswith('sha256:'), 'denied row must be chained'
+assert d['spend_tip_hash'] == x['row_hash'] and d['chain_tip_seq'] == 4, 'tip must advance to the denied row'
+print('PASS: denied row is hash-chained; tip advanced')
+PYEOF
+[ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: denied chain linkage"; fail=$((fail+1)); }
 
 echo "--- insufficient balance + topup + suspend ---"
 check "create dust envelope -> 201" 201 -X POST -H "$AUTH" -H 'Content-Type: application/json' \

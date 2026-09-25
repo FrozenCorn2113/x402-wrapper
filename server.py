@@ -124,8 +124,12 @@ velocity cap (per minute). Envelope calls SKIP the 402 x402 flow entirely —
 no X-Payment needed. Any ambiguity (unknown/suspended/closed envelope, cap
 exceeded, short balance, velocity tripped, missing or malformed reason)
 refuses with HTTP 402 code ENVELOPE_DECLINED: nothing is decremented,
-charged, or forwarded. Statement and per-envelope receipts: GET
-{base}/v1/envelopes/{{id}} (public).
+charged, or forwarded. Refusals are recorded as chained denied rows with
+the rule id that fired. Statement and per-envelope receipts: GET
+{base}/v1/envelopes/{{id}} (public). Every row is hash-chained
+(seq/prev_hash/row_hash); the statement publishes `spend_tip_hash` for the
+buyer's agent to pin — row deletion is detectable without trusting our API
+(tamper-evident to a witness, not tamper-proof in a vacuum).
 
 HONESTY NOTE: v1 envelopes are OPERATOR-ISSUED mandates recorded only after
 verified on-chain top-ups (principal -> business wallet, read-only
@@ -278,7 +282,8 @@ async def admin_open_envelope(
     """Open a prepaid envelope. Operator-only: the operator calls this ONLY
     after read-only on-chain verification that the principal sent USDC to
     the business wallet. Body: {principal_wallet, label, usd_amount,
-    per_call_cap, allowed_paths, velocity_per_min, reason_required}."""
+    per_call_cap, allowed_paths, velocity_per_min, reason_required,
+    receipt_window_seconds?, receipt_window_grace_seconds?}."""
     denied = _require_admin(authorization)
     if denied:
         return denied
@@ -297,6 +302,8 @@ async def admin_open_envelope(
         velocity_per_min=body.get("velocity_per_min"),
         reason_required=body.get("reason_required"),
         valid_wrappers=set(WRAPPERS),
+        receipt_window_seconds=body.get("receipt_window_seconds"),
+        receipt_window_grace_seconds=body.get("receipt_window_grace_seconds"),
     )
     if err:
         return JSONResponse({"error": err}, status_code=400)

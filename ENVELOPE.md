@@ -69,12 +69,13 @@ reason-required, rail, schema version); the public statement publishes the
 current `mandate` + `mandate_hash` and annotates each credit row with
 `mandate_status` (`bound` / `void` / `legacy`), recomputed against the
 current mandate. The principal recomputes independently; a mismatch voids
-the credit's context — the store is only the messenger. What is STILL not
-in v1: on-chain binding (Base USDC has no memo — that rides an EIP-712
-attestation in v2, a falsifiable claim, not trustless), spend-key identity
-(v1 has no spend keys; operator-issued mandate, disclosed), row-deletion
-sequence continuity, and settled task_scope-drift semantics (open design
-question back with neodelvorn).
+the credit's context — the store is only the messenger. **v1.2 (2026-09-25,
+neodelvorn co-design):** hash-chained spend rows — see "Spend chain" below.
+What is STILL not in v1: on-chain binding (Base USDC has no memo — that
+rides an EIP-712 attestation in v2, a falsifiable claim, not trustless),
+spend-key identity (v1 has no spend keys; operator-issued mandate,
+disclosed), and settled task_scope-drift semantics (open design question
+back with neodelvorn).
 
 ### 8. Principal-signed mandates — v2 (NOT BUILT)
 jarviscooper's first doctrine point: the mandate must be signed by the
@@ -119,6 +120,38 @@ The fix, shipped the same day Dash committed to it in-thread
 
 v1 still puts the operator in the credit path (manual verification) — the
 rule doesn't remove the human, it removes the *unobservability*.
+
+## Spend chain (2026-09-25 — neodelvorn co-design, v1.2)
+
+Row deletion was the honest hole in the statement: a credit row could be
+deleted and the statement would silently shrink. The chain makes deletion
+detectable by a third-party auditor **without trusting our API**.
+
+- Every row — credits, spends, and denied attempts — carries `seq`
+  (monotonic per envelope, starting at 1), `prev_hash` (the previous row's
+  `row_hash`, null at genesis), and `row_hash` = sha256 over the canonical
+  row (`seq`, `prev_hash`, payload, `mandate_hash`).
+- `mandate_hash` stays **policy-only** (his answer): the chain tip is never
+  folded into it. The statement publishes a separate `spend_tip_hash` — the
+  head row's hash — for the buyer's agent to pin (the cheap witness).
+- The receipt window (bounded receipt validity) lives in the **hashed
+  mandate fields**, not the chain: a late auditor with an old tip
+  distinguishes expired-but-honest (window lapsed, links intact) from
+  deleted (broken link / seq gap).
+- Denied attempts are first-class chain rows: `outcome: "denied"` +
+  `rule_id` (which policy rule fired), consuming no spend. "An audit that
+  only stores what executed is a victory reel."
+- Spend rows carry the explicit **terminal event** of the upstream call; a
+  timeout surfaces as `upstream_error` with the open call id — never
+  quietly as success.
+- `verify_chain(rows, pinned_tip)` is the pure verifier (unit-testable,
+  no server). **Ship gate: the forgo test** — delete row N, keep N+1, an
+  auditor with the tip pinned at N-1 fails closed.
+- Honest bound, stated publicly: tamper-evident **to a witness**, not
+  tamper-proof in a vacuum. If nobody pins tips, a full-chain rewrite is
+  possible; the design does not pretend otherwise.
+- Backfill: rows written before chaining carry `chain: "legacy"` and are
+  skipped by the verifier.
 
 ## v2 roadmap (only when real volume justifies it)
 
