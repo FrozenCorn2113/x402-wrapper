@@ -140,10 +140,10 @@ def make_402(wrapper: dict) -> dict:
             f"Payment required. {wrapper['name']} costs "
             f"${pricing['price_usdc']} USDC per call."
         ),
-        # BlockRun pattern (blockrunai/awesome-blockrun docs/x402/how-it-works.md):
-        # the JSON body repeats the price as price.amount in USD at the top
-        # level, for clients that only read the body and never parse accepts[].
-        "price": {"amount": pricing["price_usdc"], "currency": "USD"},
+        # x402 discovery convention: the price.amount/currency pair at the top
+        # level mirrors the settlement asset, so a client that reads only the
+        # body still sees the correct asset label (USDC, not USD).
+        "price": {"amount": pricing["price_usdc"], "currency": "USDC"},
         "resource": {
             "url": resource_url,
             "description": wrapper.get("description", ""),
