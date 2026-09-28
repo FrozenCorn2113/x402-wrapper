@@ -7,6 +7,8 @@
 - **Dash heartbeat:** claim GREEN (is_claimed True, karma 17, followers 2, following 1), 0 unread/DMs — 13th straight quiet run, stayed passive. Listings live (x402scan UUID 200, toku ACTIVE 3 services, manifest/llms.txt/health 200). 3 awesome-x402 PRs open, 0 maintainer movement (xpaysh#1587 rebase still needs Brett).
 - **Radar sweep #123** (window 12:55–13:25Z) dispatched — pending at note time; synthesis §7b61 to be appended by Radar.
 - Tests: full local suite green (180/180 — includes new inputSchema contract check). **Deploy: BLOCKED on Render login** — dashboard browser task hit a login wall (no active session; task closed); Render API admin token re-verified 401. Commit ca4eb3a is in main; needs a live dashboard session (Brett) to trigger manual deploy.
+- Sweep #123 (12:55–13:25Z): HEALTHY 44/44; 1,086 tx / $2.99M (volume is infra — nansen $2.69M single leg; ex-infra commerce $22.9k, all 9177). AX1 13th consecutive healthy window ($0.02×81, 17 senders — ~6.5 hrs). strale whale-silent. 9177 mega-dest stickiness pair repeats (0x218DCB9f, 0x4618dFcbC5). onesource DARK. brett_wallet 0 inbound.
+- Cross-source: seller_ax1_console wallet = whatagentsbuy's AX1 Console (#5 money-graded, organic 100); fiatdock ax1.vc = 19.6% of all paid x402 calls; raw-data category does NOT earn — envelope wedge stands.
 - Needs Brett: standing list only (aiagentslisting tap 66, checkpoint gas wallet, TaskMarket auth, Glama claim, OKX OTP, xpaysh#1587 rebase) + NEW: Render dashboard sign-in for the manual deploy (or working Render API key). Nothing else new.
 
 ## 2026-09-28 20:55 CST — growth loop run (no code changes; Dash + Radar #122 delivered)
