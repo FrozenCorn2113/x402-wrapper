@@ -492,6 +492,19 @@ def well_known_x402():
                             "method": e["method"],
                             "price_usdc": e["price_usdc"],
                             "description": e["description"],
+                            # Per-endpoint JSON Schema input contract, derived
+                            # from the wrapper's passthrough query params
+                            # (all strings). Feeds bazaar `inputSchema`
+                            # graders (whatagentsbuy preflight: "publishes
+                            # discovery docs and an input schema") and the
+                            # official x402 bazaar discovery extension.
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": {
+                                    p: {"type": "string"}
+                                    for p in (e.get("params") or [])
+                                },
+                            },
                         }
                         for e in catalog
                     },
@@ -522,6 +535,7 @@ def well_known_x402():
                                             "method": {"type": "string", "const": "GET"},
                                             "price_usdc": {"type": "string"},
                                             "description": {"type": "string"},
+                                            "inputSchema": {"type": "object"},
                                         },
                                         "required": ["url", "method", "price_usdc"],
                                     },

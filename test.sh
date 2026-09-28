@@ -43,6 +43,19 @@ echo "--- discovery manifest ---"
 check "well-known x402" 200 "$BASE/.well-known/x402"
 grep -q '"x402Version"' /tmp/wrap_test.json && grep -q 'weather-now' /tmp/wrap_test.json && grep -q 'payTo' /tmp/wrap_test.json && echo "PASS: discovery manifest content" && pass=$((pass+1)) || { echo "FAIL: discovery manifest"; fail=$((fail+1)); }
 grep -q '"extensions"' /tmp/wrap_test.json && grep -q '"bazaar"' /tmp/wrap_test.json && echo "PASS: manifest has extensions.bazaar block" && pass=$((pass+1)) || { echo "FAIL: extensions.bazaar"; fail=$((fail+1)); }
+$PY - <<'PYEOF'
+import json, sys
+d = json.load(open('/tmp/wrap_test.json'))
+eps = d['extensions']['bazaar']['info']['endpoints']
+assert set(eps) == {'crypto-price', 'echo', 'weather-now'}, eps.keys()
+for name, e in eps.items():
+    s = e.get('inputSchema')
+    assert isinstance(s, dict) and s.get('type') == 'object', (name, s)
+    assert isinstance(s.get('properties'), dict), (name, s)
+assert 'ids' in eps['crypto-price']['inputSchema']['properties'], eps['crypto-price']
+print('PASS: bazaar endpoints carry per-endpoint inputSchema')
+PYEOF
+[ "$?" -eq 0 ] && pass=$((pass+1)) || { echo "FAIL: inputSchema contract"; fail=$((fail+1)); }
 grep -q '"network":"eip155:8453"' /tmp/wrap_test.json && grep -q '"asset":"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"' /tmp/wrap_test.json && echo "PASS: manifest network CAIP-2 + asset contract" && pass=$((pass+1)) || { echo "FAIL: manifest network/asset"; fail=$((fail+1)); }
 grep -q 'fractions of a cent' /tmp/wrap_test.json && echo "PASS: price copy truthful (fractions of a cent)" && pass=$((pass+1)) || { echo "FAIL: price copy"; fail=$((fail+1)); }
 $PY - <<'PYEOF'
