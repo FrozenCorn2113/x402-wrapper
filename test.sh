@@ -273,7 +273,7 @@ check "bad submit (missing fields) -> 422" 422 -X POST -H 'Content-Type: applica
 check "bad submit (bad result) -> 422" 422 -X POST -H 'Content-Type: application/json' -d '{"challenged_by":"x","challenge_type":"y","result":"maybe","details":"z"}' "$BASE/v1/challenge-log"
 check "freshness beacon reflects submission" 200 "$BASE/v1/freshness"
 grep -q '"challenged_by":"harness-ci v1"' /tmp/wrap_test.json && grep -q '"last_result":"pass"' /tmp/wrap_test.json && grep -qv '"staleness_seconds":null' /tmp/wrap_test.json && echo "PASS: beacon shows latest independent challenge" && pass=$((pass+1)) || { echo "FAIL: beacon after submit"; fail=$((fail+1)); }
-grep -q '"target_interval_seconds": *3600' /tmp/wrap_test.json && echo "PASS: week-1 hourly cadence" && pass=$((pass+1)) || { echo "FAIL: cadence"; fail=$((fail+1)); }
+grep -q '"target_interval_seconds": *86400' /tmp/wrap_test.json && echo "PASS: steady daily cadence" && pass=$((pass+1)) || { echo "FAIL: cadence"; fail=$((fail+1)); }
 
 echo "--- holder roster (public copy-holder set) ---"
 check "holder roster -> 200" 200 "$BASE/v1/holder-roster"
