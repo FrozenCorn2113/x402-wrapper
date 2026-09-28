@@ -57,6 +57,18 @@ Base URL: {base}
 3. Retry the same request with header `X-Payment: <base-tx-hash>`.
    (Legacy `X-Payment-Proof` header is still accepted.)
 
+## Envelopes (prepaid spend budgets)
+For agents whose principal cannot authorize per-call spend: the principal
+funds a prepaid spend envelope (typically $5-20 USDC on Base), and the agent
+draws it down without touching the principal's wallet per call. Caps, not
+mandates — per-call caps, an endpoint allowlist, and per-minute velocity
+limits bound what the agent may attempt; any ambiguity resolves to no
+purchase (HTTP 402 ENVELOPE_DECLINED, nothing charged). The principal can
+revoke the envelope mid-flight (suspend/close takes effect on the next call).
+Agent identity is optional — the principal's funding is the trust root.
+Envelope calls skip the per-call 402 flow: send `X-Envelope: <id>` (plus
+`X-Reason: <why>` when the policy requires it). Full policy: {base}/skill.md.
+
 ## Endpoints
 - weather-now — $0.0005/call — Current weather and forecast for any latitude/longitude (via Open-Meteo). Params: latitude, longitude, current, hourly, daily, timezone, forecast_days.
 - crypto-price — $0.001/call — Crypto spot prices (via CoinGecko). Params: ids, vs_currencies.
@@ -436,9 +448,11 @@ def well_known_x402():
             "3. Every call returns a machine-readable receipt with the "
             "wrapper, the price charged, and a payment-proof fingerprint.\n\n"
             "## Envelope lane (prepaid, skips the per-call 402)\n"
-            f"Principals can open a prepaid spend envelope with per-call caps "
-            f"and velocity limits: {base}/v1/envelopes — draws skip the 402 "
-            "flow and carry receipts. Statement: "
+            f"Principals fund a prepaid spend envelope (typically $5-20 USDC "
+            f"on Base) with per-call caps and velocity limits: "
+            f"{base}/v1/envelopes — caps, not mandates; the principal can "
+            "revoke mid-flight; agent identity optional. "
+            "Draws skip the 402 flow and carry receipts. Statement: "
             f"{base}/v1/envelopes/{{id}}.\n\n"
             "## Retry rule\n"
             "If the upstream provider fails, we still served your call against "
