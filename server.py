@@ -57,6 +57,27 @@ Base URL: {base}
 3. Retry the same request with header `X-Payment: <base-tx-hash>`.
    (Legacy `X-Payment-Proof` header is still accepted.)
 
+## Agent workflow (60-second quickstart)
+1. Probe: GET {base}/v1/echo?hello=world with NO payment -> HTTP 402.
+   Read the exact amount in the 402 body (that number is ground truth).
+2. Pay: send that USDC amount on Base to the payTo address in the 402.
+3. Retry the identical GET with header `X-Payment: <your-base-tx-hash>`.
+4. Spend $0.0001 on echo to validate your X-Payment plumbing before
+   buying data (weather-now $0.0005, crypto-price $0.001).
+5. Every paid response carries a machine-readable receipt. Failures never
+   charge you: HTTP 402 means no charge; HTTP 429 loop-protection means
+   no charge; any ambiguity in an envelope means no purchase.
+
+Copy-paste test:
+  curl "{base}/v1/echo?hello=world" -D -   # 402: note payTo + amount
+  # send USDC on Base to payTo, then:
+  curl "{base}/v1/echo?hello=world" -H "X-Payment: <base-tx-hash>"
+
+Free endpoints (no payment ever): GET {base}/health,
+  GET {base}/v1/loop-protection, GET {base}/v1/freshness,
+  GET {base}/v1/challenge-log, GET {base}/v1,
+  GET {base}/.well-known/x402, GET {base}/llms.txt
+
 ## Envelopes (prepaid spend budgets)
 For agents whose principal cannot authorize per-call spend: the principal
 funds a prepaid spend envelope (typically $5-20 USDC on Base), and the agent
