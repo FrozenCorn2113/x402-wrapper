@@ -167,6 +167,29 @@ check "mock proof -> 200" 200 -H "X-Payment: mock-v2test1" \
   "$BASE/v1/weather-now?latitude=43.7&longitude=-79.4&current=temperature_2m"
 grep -q 'temperature_2m' /tmp/wrap_test.json && echo "PASS: upstream data forwarded" && pass=$((pass+1)) || { echo "FAIL: upstream data"; fail=$((fail+1)); }
 grep -q 'mock_settlement' /tmp/wrap_test.json && echo "PASS: receipt attached" && pass=$((pass+1)) || { echo "FAIL: receipt"; fail=$((fail+1)); }
+# Settlement receipt headers: header-based buyer acceptance packs gate on
+# PAYMENT-RESPONSE (wouldpayagain), and browser/fetch-based agents need the
+# header in Access-Control-Expose-Headers to read it (treasurytraceai,
+# 2026-10-03). /tmp/wrap_headers.txt holds this check's response headers.
+grep -qi '^x-payment-response:' /tmp/wrap_headers.txt && echo "PASS: settled 200 sends X-Payment-Response header" && pass=$((pass+1)) || { echo "FAIL: X-Payment-Response header"; fail=$((fail+1)); }
+grep -qi '^payment-response:' /tmp/wrap_headers.txt && echo "PASS: settled 200 sends PAYMENT-RESPONSE alias" && pass=$((pass+1)) || { echo "FAIL: PAYMENT-RESPONSE header"; fail=$((fail+1)); }
+grep -qi '^access-control-expose-headers:.*x-payment-response' /tmp/wrap_headers.txt && echo "PASS: settled 200 exposes settlement header for CORS" && pass=$((pass+1)) || { echo "FAIL: settled CORS expose header"; fail=$((fail+1)); }
+$PY - <<'PYEOF'
+import base64, json
+hdrs = {}
+for line in open('/tmp/wrap_headers.txt', encoding='utf-8', errors='replace'):
+    if ':' in line and not line.startswith('HTTP'):
+        k, v = line.split(':', 1)
+        hdrs[k.strip().lower()] = v.strip()
+b64 = hdrs.get('x-payment-response', '')
+body = json.load(open('/tmp/wrap_test.json'))
+decoded = json.loads(base64.b64decode(b64).decode())
+assert decoded['x402Version'] == 2, decoded.keys()
+assert decoded['receipt']['wrapper'] == 'weather-now', decoded['receipt']
+assert decoded['receipt'] == body['receipt'], 'header receipt matches body receipt'
+print('PASS: X-Payment-Response decodes to the settled receipt')
+PYEOF
+[ $? -eq 0 ] && pass=$((pass+1)) || fail=$((fail+1))
 
 echo "--- legacy X-Payment-Proof header still works ---"
 check "legacy header -> 200" 200 -H "X-Payment-Proof: mock-v2legacy1" \
@@ -457,6 +480,9 @@ echo "--- envelope drawdown spends balance ---"
 check "envelope drawdown echo -> 200" 200 -H "X-Envelope: $ENV_ID" "$BASE/v1/echo?msg=env-draw-1"
 grep -q '"type": *"envelope"' /tmp/wrap_test.json && grep -q "$ENV_ID" /tmp/wrap_test.json && echo "PASS: envelope receipt attached" && pass=$((pass+1)) || { echo "FAIL: envelope receipt"; fail=$((fail+1)); }
 grep -q '"balance_remaining_atomic": *4999900' /tmp/wrap_test.json && echo "PASS: receipt shows remaining balance" && pass=$((pass+1)) || { echo "FAIL: receipt balance"; fail=$((fail+1)); }
+# Envelope-settled 200s must send the settlement headers too.
+grep -qi '^x-payment-response:' /tmp/wrap_headers.txt && echo "PASS: envelope settled 200 sends X-Payment-Response header" && pass=$((pass+1)) || { echo "FAIL: envelope X-Payment-Response header"; fail=$((fail+1)); }
+grep -qi '^access-control-expose-headers:.*x-payment-response' /tmp/wrap_headers.txt && echo "PASS: envelope settled 200 exposes settlement header for CORS" && pass=$((pass+1)) || { echo "FAIL: envelope settled CORS expose header"; fail=$((fail+1)); }
 
 echo "--- envelope statement ---"
 check "statement -> 200" 200 "$BASE/v1/envelopes/$ENV_ID"

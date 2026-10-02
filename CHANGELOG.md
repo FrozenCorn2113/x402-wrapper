@@ -1,3 +1,14 @@
+# CHANGELOG
+
+## 2026-10-03 02:55 CST — growth loop run (settled-response receipt headers shipped: X-Payment-Response + PAYMENT-RESPONSE + CORS expose; tests 191/191; wallet 2.00 USDC unchanged; #288 execution deferred to 03:25; Dash + Radar dispatched)
+- Wallet: **no new inbound USDC** (Blockscout token-balances: 2.00 USDC, unchanged 09-21 seed; 0 inbound USDC legs, 1 page). Health: /health 200 LIVE (mode=live, pay_to Brett's address, 3 wrappers).
+- **Receipt-header fix (buyer acceptance lane):** settled (paid) 200s previously carried the receipt ONLY in the JSON body — no settlement header at all. Buyer-side acceptance packs gate on receipt headers (wouldpayagain checks PAYMENT-RESPONSE; betolateral runs vendor acceptance tests "before the next spend"), and treasurytraceai's 2026-10-03 point holds: a settlement header not listed in `Access-Control-Expose-Headers` is invisible to browser/fetch-based agents. Now both settled paths (direct x402 + envelope drawdown) send base64-JSON `X-Payment-Response` AND `PAYMENT-RESPONSE` (same value, body-matching) plus `Access-Control-Expose-Headers: X-Payment-Response, PAYMENT-RESPONSE`. (Correction to the initial spot-check: the 402 challenge ALREADY exposed payment headers for CORS since 2026-09-24 — verified live on /v1/echo; the gap was the settled 200, not the 402.)
+- Implementation: `core.settlement_response_headers(receipt)` (mirrors `payment_required_headers` wire shape `{"x402Version":2,"receipt":...}`); server.py attaches it to both settled `JSONResponse` returns. Tests: 6 new test.sh checks (header presence, CORS expose, base64 decodes to the body-identical receipt) — full suite 191/191 green (was 185).
+- Deploy: commit + push, then Render dashboard manual deploy (auto-deploy OFF) — pending this run.
+- **Dash dispatched** (heartbeat + listing health): claim True, karma 28, no new notifications; all listings green (402index.io ×3, x402scan, toku, verify.txt byte-exact); Open 402 Directory snapshot still stale, consecutive_failures 4 (flag at 5); no engagement posted (nothing new warranted). Report → team/dash-2026-10-03-0255.md.
+- **Radar dispatched** (money-signal follow-up): betolateral 8-comment burst 02:42–02:44 CST on money/acceptance threads (acceptance packs, idempotency-key refund semantics, charge-vs-effect-time metering — Tier 2 confirmed, strongest buyer voice this week); spawn3 quiet (full custody comment recovered: funded Base wallet 0xd14438B227dBBf2D7974F9032a7fAa75408893eB, "$5"-funded, "a balance, not a mandate"); darthcripto quiet; wouldpayagain quiet (six vendors NOT publicly named); named vendor signal 2s.io (x-payment-tx header) — Dash/parent to check if it's a listing channel; new voices treasurytraceai/merktop/Starfish on the six-vendors thread (all pre-02:25). No cold pitches. Report → team/radar-2026-10-03-0255.md.
+- **Buyer-watch #288 NOT executed** — window [18:25Z,19:25Z] closes 19:25Z (03:25 CST); gate refuses pre-close. Pre-minted script verified at 02:25; executes at the 03:25 run.
+- Needs Brett: standing list only. Nothing new.
 ## 2026-10-02 22:25 CST — growth loop run (root `/` landing page shipped; sweep #283 executing; Dash heartbeat + Radar watch-list refresh dispatched; wallet 2.00 USDC unchanged; tests running)
 - Wallet: **no new inbound USDC** (Blockscout token-balances: 2.00 USDC, unchanged 09-21 seed; 0 inbound USDC legs). Health: /health 200 LIVE (mode=live, pay_to Brett's address, 3 wrappers).
 - **Root `/` landing page shipped (dev queue item from 21:55 notes):** added `landing_text()` + `@app.get("/", response_class=PlainTextResponse)` to server.py, rendering Ink's 21:57 draft as agent-first markdown with prices/pay_to/asset rendered from live config (never hand-typed) — fixes the bare-domain 404 that directory listings link to. Test coverage: 2 new test.sh checks (200 + copy present + prices/pay_to rendered).
@@ -5,6 +16,7 @@
 - **Dash dispatched** (heartbeat + listing routine): Moltbook heartbeat (eignex tombstone re-verify), listing health (402index.io per-endpoint, x402scan canonical, toku, verify.txt, /health), Open 402 Directory crawl watch.
 - **Radar dispatched** (watch-list refresh): Dify monetization-policy re-check, RevealUI server-count re-check, one quick sweep for new x402-rail directories.
 - Tests: full local suite running (test.sh, includes the 2 new `/` checks); run notes → hidden_files/growth-2026-10-02-2225.md.
+- **Deploy:** manual Render deploy triggered + verified live (dep-davrvu3tqb8s73dj6eh0, c6b8d8e, 56.5s): /health 200 exact-match, / now 200 with the landing page — bare-domain 404 fixed in production.
 - Needs Brett: standing list only. Nothing new.
 
 ## 2026-10-02 13:55 CST — growth loop run (alias /.well-known/x402.json for Agent Bazaar listing; tests 180/180)
@@ -239,7 +251,7 @@
 - Tests: sweep self-checks green; no wrapper code changes; last full local suite green (180/180, 09-30 pre-push).
 - Needs Brett: standing list only. Nothing new.
 
-# CHANGELOG — x402-wrapper
+ — x402-wrapper
 
 ## 2026-10-01 00:55 CST — growth loop run (sweep #213 HEALTHY, 5E95 15/15 alternation; sink consolidates post-mega-leg; 9177 whale dark window 2; decision #213 +0/−0; x402scan route migration)
 - Wallet: **no new inbound USDC** (Blockscout token-transfers?filter=to: 17 lifetime items, only the 09-21 2.0 seed tx 0xe3e474d4e970adfcc242c88183e4cfd579979b1c2545aec66b02cb7348f21267; sweep #213 brett_wallet lane 0 — **92nd consecutive clean zero window**). Health: /health 200 LIVE (mode=live, pay_to=Brett's address, 3 wrappers).

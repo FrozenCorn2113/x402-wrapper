@@ -204,6 +204,33 @@ def payment_required_headers(wrapper: dict) -> dict:
     }
 
 
+def settlement_response_headers(receipt: dict) -> dict:
+    """Headers attached to SETTLED (paid) 200 responses.
+
+    Buyer-side acceptance packs gate on settlement receipt headers
+    (wouldpayagain checks PAYMENT-RESPONSE; betolateral runs vendor
+    acceptance tests "before the next spend"). The receipt already lived in
+    the JSON body, but header-based payers never saw it — and
+    treasurytraceai's point (2026-10-03) applies: a settled header that is
+    not listed in Access-Control-Expose-Headers is invisible to
+    browser/fetch()-based agents, looking identical to the header never
+    being sent. So the settled response both SENDS the settlement receipt
+    (base64 JSON, same wire shape as the 402 challenge) under both common
+    names and EXPOSES both for CORS.
+    """
+    raw = json.dumps(
+        {"x402Version": X402_VERSION, "receipt": receipt}, separators=(",", ":")
+    ).encode()
+    import base64
+
+    b64 = base64.b64encode(raw).decode()
+    return {
+        "X-Payment-Response": b64,
+        "PAYMENT-RESPONSE": b64,
+        "Access-Control-Expose-Headers": "X-Payment-Response, PAYMENT-RESPONSE",
+    }
+
+
 def looks_like_payment_payload(proof: str) -> bool:
     """True if the X-Payment value looks like a base64 x402 PaymentPayload
     (EIP-3009 authorization) rather than a plain tx hash. We settle by direct

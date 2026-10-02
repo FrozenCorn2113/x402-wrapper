@@ -924,7 +924,11 @@ async def proxy_impl(
         status, data = core.forward(wrapper, params)
         latency_ms = int((time.time() - started) * 1000)
         receipt = envelopes.finalize_spend(pending, status, latency_ms)
-        return JSONResponse({"data": data, "receipt": receipt}, status_code=status)
+        return JSONResponse(
+            {"data": data, "receipt": receipt},
+            status_code=status,
+            headers=core.settlement_response_headers(receipt),
+        )
 
     # A base64 x402 PaymentPayload (EIP-3009 authorization) can't be settled by
     # us directly — tell the agent how to pay instead of silently rejecting.
@@ -962,18 +966,20 @@ async def proxy_impl(
     status, data = core.forward(wrapper, params)
     latency_ms = int((time.time() - started) * 1000)
     receipt = core.log_receipt(wrapper, proof or "", status, latency_ms)
+    settled = {
+        "wrapper": receipt["wrapper"],
+        "price_usdc": receipt["price_usdc"],
+        "payment_proof_fp": receipt["payment_proof_fp"],
+        "mock_settlement": receipt["mock_settlement"],
+    }
 
     return JSONResponse(
         {
             "data": data,
-            "receipt": {
-                "wrapper": receipt["wrapper"],
-                "price_usdc": receipt["price_usdc"],
-                "payment_proof_fp": receipt["payment_proof_fp"],
-                "mock_settlement": receipt["mock_settlement"],
-            },
+            "receipt": settled,
         },
         status_code=status,
+        headers=core.settlement_response_headers(settled),
     )
 
 
