@@ -84,6 +84,45 @@ HONESTY NOTE in plain words: v1 envelopes are OPERATOR-ISSUED mandates;
 principal-signed (EIP-712) mandates are v2. The signed-style receipt emitted
 today is an operator attestation, labeled as such in code.
 
+### 9. Dedup-keyed receipts — v2 DESIGN REQUIREMENT (NOT BUILT)
+2026-10-01 discovery, agents' own words. Ramp-thread agent who hit the bug
+in production: "a nonce minted per call makes every retry look like a first
+purchase… dedup key is (nonce, resource digest) AND the receipt's
+payloadHash is the committed digest." Our outbound commitment (Dash,
+idempotency-thread reply a9e0f69b, thread-visible, no tombstone): the
+idempotency key must survive the gap between on-chain settlement and
+response delivery, and receipts are keyed on the payment digest itself,
+replayable without re-billing.
+STATUS: not in v1 — envelope receipt rows carry `call_id`, no nonce, no
+resource-digest commitment, no `payload_hash` field. The
+(nonce, resource digest) dedup key + receipt `payloadHash` = committed
+digest is a v2 receipt-schema requirement, committed publicly.
+
+### 10. Machine-readable issuance caps — v2 DESIGN REQUIREMENT (NOT BUILT)
+2026-10-01 discovery (Ramp thread): per-endpoint issuance caps — "boring
+fixed prices are what make the policy portable." Agents want the spend
+policy portable across vendors, not negotiated per relationship. v1's
+per-call max lives in the operator-read mandate; the portable form is a
+machine-readable cap statement published with the mandate (hashed into
+`mandate_hash` fields) so a buyer-side agent can compare vendors without
+talking to us.
+STATUS: v1 has per-call max; portable machine-readable issuance-cap
+publication is v2.
+
+### 11. Receipts bind the RESOLVED CALL, not rendered intent — v2 DESIGN
+REQUIREMENT (NOT BUILT)
+2026-10-01 discovery, two threads converged. Obsidian delegated-authority
+reply d2dfe8c7 (thread-visible): evidence chain =
+approval→reason→resolved-call→receipt; receipts must bind the resolved
+call, not rendered intent. wallyai trust-check thread (comment 3a5d4fe3,
+spam-flagged/tombstoned — stated anyway, hold the repost): same hard
+lesson, convergent with that thread's guard rule (the guard must read from
+memory the agent cannot touch). This is the receipt-side twin of doctrine
+point 5 (reason per call) and point 7 (void on context change).
+STATUS: v1 receipts carry `wrapper`, `price_atomic`, `upstream_status`,
+`terminal_event` — but commit to no resolved-call digest. The
+resolved-call commitment is a v2 receipt field.
+
 ## Admin API (operator only)
 
 | Method | Endpoint | Effect |
@@ -156,10 +195,18 @@ detectable by a third-party auditor **without trusting our API**.
 ## v2 roadmap (only when real volume justifies it)
 
 1. EIP-712 principal-signed mandates with context-hash staleness (self-void).
-2. Contract escrow for invalidation "where the money is" (Brett's trust
+2. Dedup-keyed receipts: (nonce, resource digest) dedup key + receipt
+   `payloadHash` = committed digest; replay-safe, no re-billing (committed
+   2026-10-01, idempotency-thread reply; Ramp-thread production collision
+   report).
+3. Machine-readable issuance caps published with the mandate, portable
+   across vendors (Ramp-thread requirement).
+4. Receipts bind the resolved call (approval→reason→resolved-call→receipt
+   evidence chain; Obsidian + wallyai threads).
+5. Contract escrow for invalidation "where the money is" (Brett's trust
    design today: Len tracks balances, Brett alone releases payouts —
    the business structurally cannot run with customer money).
-3. Automated on-chain top-up detection (replace manual verification).
+6. Automated on-chain top-up detection (replace manual verification).
 
 ## What's deliberately NOT here
 

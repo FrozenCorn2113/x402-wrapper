@@ -99,8 +99,10 @@ check "skill.md -> 200" 200 "$BASE/skill.md"
 grep -q 'SKILL: x402-wrapper' /tmp/wrap_test.json && grep -q 'X-Envelope' /tmp/wrap_test.json && grep -q '0.0001' /tmp/wrap_test.json && echo "PASS: skill.md content" && pass=$((pass+1)) || { echo "FAIL: skill.md content"; fail=$((fail+1)); }
 check "agent-card root alias -> 200" 200 "$BASE/agent-card.json"
 grep -q '"skill_md"' /tmp/wrap_test.json && echo "PASS: root alias card advertises skill_md" && pass=$((pass+1)) || { echo "FAIL: root alias card"; fail=$((fail+1)); }
-check "agent-card A2A alias -> 200" 200 "$BASE/.well-known/agent.json"
-grep -q '"envelope_support": *true' /tmp/wrap_test.json && echo "PASS: A2A alias card content" && pass=$((pass+1)) || { echo "FAIL: A2A alias card"; fail=$((fail+1)); }
+check "open-402 agent.json -> 200" 200 "$BASE/.well-known/agent.json"
+grep -q '"display_name"' /tmp/wrap_test.json && grep -q '"version": *"1.3"' /tmp/wrap_test.json && grep -q '"weather_now"' /tmp/wrap_test.json && echo "PASS: open-402 manifest schema (display_name, v1.3, intents)" && pass=$((pass+1)) || { echo "FAIL: open-402 manifest schema"; fail=$((fail+1)); }
+grep -q '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913' /tmp/wrap_test.json && grep -q '"payout_address": *"0x[^"]\+"' /tmp/wrap_test.json && echo "PASS: open-402 manifest payout + USDC contract" && pass=$((pass+1)) || { echo "FAIL: open-402 manifest payout/contract"; fail=$((fail+1)); }
+grep -q '"envelope_support"' /tmp/wrap_test.json && { echo "FAIL: open-402 path must not serve agent-card"; fail=$((fail+1)); } || { echo "PASS: open-402 path is not the agent-card"; pass=$((pass+1)); }
 
 echo "--- 402 without payment (v2 envelope) ---"
 check "no proof -> 402" 402 "$BASE/v1/weather-now?latitude=43.7&longitude=-79.4&current=temperature_2m"

@@ -2502,3 +2502,9 @@
 - **Radar:** 6c56 #272 dest-consolidation watch + #272 rec — dispatched, report pending at team/radar-2026-10-02-1130.md.
 - Tests: verify_chain green (mint + gate-refusal); sweep #272 HEALTHY; no wrapper code changes; last full local suite green (180/180, 09-30 pre-push).
 - Needs Brett: standing list only. Nothing new.
+
+## 2026-10-02 18:55 CST — Open 402 Directory manifest (product change)
+- **New: `/.well-known/agent.json` now serves the Open 402 Directory manifest (schema v1.3)** — the directory already indexed us as "unclaimed" with 4 consecutive `invalid_manifest` failures because that path served our agent-card. Intents (names, endpoints, methods, prices) are built dynamically from the live catalog so prices can't drift; Ink-authored copy (display_name, description, payments.x402 base/USDC, payout_address from catalog pay_to). Next nightly crawl should flip us to a verified directory card. Copy artifact: team/agent.json.
+- **Breaking-ish path change:** `/.well-known/agent.json` is no longer an alias of the agent-card. The card stays at `/.well-known/agent-card.json` and `/agent-card.json` (docstrings + header comments updated).
+- **test.sh:** replaced the A2A-alias check with open-402 schema checks (display_name, v1.3, weather_now intent, non-empty 0x payout_address, USDC contract, and a negative check that the path no longer serves the agent-card). Full suite: **182/182 green**.
+- Deployed: Render manual deploy (auto-deploy is off).

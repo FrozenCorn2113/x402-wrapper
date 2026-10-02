@@ -124,7 +124,8 @@ register your own pull with POST {base}/v1/holder-roster.
 Machine-readable catalog: GET {base}/v1
 Strale-style catalog: GET {base}/x402/catalog
 Agent-card (one-GET discovery): GET {base}/.well-known/agent-card.json
-  (also at {base}/agent-card.json and {base}/.well-known/agent.json)
+  (also at {base}/agent-card.json)
+Open 402 Directory manifest: GET {base}/.well-known/agent.json
 Skill (agent usage guide): GET {base}/skill.md
 Discovery manifest: GET {base}/.well-known/x402
 Health: GET {base}/health
@@ -581,15 +582,77 @@ def index_402_verify():
     return h + "\n"
 
 
+# Open 402 Directory manifest (agentinternetruntime.com), schema v1.3.
+# This exact path is crawled nightly by the directory's indexer; it MUST keep
+# the open-402 schema (display_name/description/origin/payments/payout_address/
+# intents). Our agent-card lives at /.well-known/agent-card.json instead —
+# serving it here caused the directory's "invalid_manifest" failures.
+_OPEN402_DESCRIPTION = (
+    "Pay-per-call data API proxy for AI agents: weather-now ($0.0005/call), "
+    "crypto-price ($0.001/call), echo ($0.0001/call), settled in native USDC "
+    "on Base via x402 v2 \u2014 no API keys, accounts, or subscriptions. "
+    "Financial insurance for autonomous loops: always-on loop-drain protection "
+    "trips a 5-minute cooldown (HTTP 429 AGENT_LOOP_DETECTED) on 25+ identical "
+    "calls per minute, and blocked calls are never charged; prepaid spend "
+    "envelopes add per-call caps, endpoint allowlists, and velocity limits "
+    "with principal revocation mid-flight."
+)
+_OPEN402_INTENT_COPY = {
+    "weather-now": ("weather_now", "Current weather and forecast for any latitude/longitude (via Open-Meteo, no key needed). Params: latitude, longitude, current, hourly, daily, timezone, forecast_days."),
+    "crypto-price": ("crypto_price", "Simple crypto spot price lookup by coin id (via CoinGecko free tier, no key needed). Params: ids, vs_currencies, include_market_cap, include_24hr_vol, include_24hr_change."),
+    "echo": ("echo", "Echoes request params back (via httpbin). Cheapest call; recommended first purchase to validate X-Payment plumbing before buying data."),
+}
+
+
+@app.get("/.well-known/agent.json")
+def open402_manifest():
+    """Open 402 Directory manifest (schema v1.3) for agentinternetruntime.com.
+
+    Intents (names, endpoints, methods, prices) are built from the live catalog
+    so prices can never drift from production; the copy is Ink-authored and
+    grounded in the live x402 manifest + llms.txt.
+    """
+    from urllib.parse import urlparse
+    base = core.public_base_url()
+    catalog = core.catalog() or []
+    intents = []
+    for e in catalog:
+        intent_name, desc = _OPEN402_INTENT_COPY.get(
+            e["name"], (e["name"].replace("-", "_"), e.get("description", ""))
+        )
+        intents.append({
+            "name": intent_name,
+            "description": desc,
+            "endpoint": f"{base}/v1/{e['name']}",
+            "method": e.get("method", "GET"),
+            "price": {"amount": float(e["price_usdc"]), "currency": "USDC"},
+        })
+    pay_to = catalog[0].get("pay_to") if catalog else None
+    return {
+        "display_name": "x402-wrapper",
+        "description": _OPEN402_DESCRIPTION,
+        "origin": urlparse(base).netloc,
+        "payments": {"x402": {"networks": [{
+            "network": "base",
+            "asset": "USDC",
+            "contract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        }]}},
+        "payout_address": pay_to,
+        "version": "1.3",
+        "intents": intents,
+    }
+
+
 @app.get("/.well-known/agent-card.json")
 @app.get("/agent-card.json")
-@app.get("/.well-known/agent.json")
 def agent_card():
     """Agent-card discovery document, mirroring Strale's discovery surface.
 
-    Served at three paths: /.well-known/agent-card.json (ours), /agent-card.json
-    (Strale-style root), /.well-known/agent.json (A2A convention) — all aliases
-    of the same document, so buyers that fetch any conventional path get it.
+    Served at two paths: /.well-known/agent-card.json (ours) and /agent-card.json
+    (Strale-style root). NOTE: /.well-known/agent.json is NOT an alias of this
+    card — it serves the Open 402 Directory manifest (see open402_manifest();
+    the directory's crawler fetches that exact path with its own schema, and
+    serving our card there caused "invalid_manifest" failures).
     §6o finding: buyers price-ladder vendor catalogs off agent-card.json +
     /x402/catalog. This card gives an agent everything in one GET: who we
     are, capabilities + per-call prices, payment rails, and where to verify
