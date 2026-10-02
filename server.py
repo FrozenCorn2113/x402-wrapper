@@ -183,6 +183,103 @@ def health():
     }
 
 
+def landing_text() -> str:
+    """Root `/` landing page: agent-first markdown (copy by Ink, 2026-10-02).
+
+    Bare domain 404'd; directory listings link it, so agents land here first.
+    Prices/pay_to are rendered from live config, never hand-typed.
+    """
+    base = core.public_base_url()
+    pay_to = (core.resolve_pay_to(next(iter(WRAPPERS.values())))
+              if WRAPPERS else "payTo from GET /v1")
+    asset = (core.resolve_asset(next(iter(WRAPPERS.values())))
+             if WRAPPERS else "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")
+
+    def price_line(name: str, blurb: str) -> str:
+        w = WRAPPERS.get(name, {})
+        usd = w.get("pricing", {}).get("price_usdc", "?")
+        atomic = (core.price_to_atomic(usd)
+                  if isinstance(usd, str) and usd not in ("?",) else "?")
+        return (f"| GET /v1/{name} | ${usd} | {atomic} | {blurb} |")
+
+    return f"""# x402-wrapper
+
+Financial insurance for autonomous loops: one pay-per-call endpoint with
+loop protection and spend circuit-breakers built in, so a runaway agent
+can't drain its principal's budget. Cheap data endpoints are the service;
+bounded spend is the product.
+
+## Endpoints
+
+| endpoint | price/call (USD) | price/call (atomic USDC) | what it does |
+|---|---|---|---|
+{price_line("crypto-price", "crypto spot prices (CoinGecko); params: ids, vs_currencies")}
+{price_line("weather-now", "current weather + forecast for any lat/lon (Open-Meteo)")}
+{price_line("echo", "echoes your params back; test your payment loop before spending real money")}
+
+No API keys. No accounts. No subscriptions.
+
+## How to pay (x402 v2 on Base mainnet)
+
+1. `GET {base}/v1/<endpoint>?<params>` with NO payment -> HTTP 402 with a
+   PaymentRequired challenge (also base64 in the `PAYMENT-REQUIRED` header).
+   Read the `accepts` block — that is the exact amount charged.
+2. Send native USDC on Base (eip155:8453, token `{asset}`) to pay_to `{pay_to}`.
+3. Retry the same request with header `X-Payment: <base-tx-hash>` ->
+   200 + machine-readable receipt.
+
+Prepaid lane: principals can fund a spend envelope (typically $5-20 USDC) with
+per-call caps and velocity limits; draws skip the 402 flow and carry receipts.
+Only the principal can fund/top-up. `GET {base}/v1/envelopes/<id>` for a live
+statement; send `X-Envelope: <id>` (and `X-Reason: <text>` if reason_required).
+
+## Trust (verify, don't trust)
+
+- Loop protection: 25+ identical calls from one client in 60s -> HTTP 429
+  `AGENT_LOOP_DETECTED`, 5-minute cooldown on that request shape. Blocked calls
+  are never charged.
+- Live proof: `GET {base}/v1/loop-protection` (policy + block counters),
+  `GET {base}/v1/freshness` (last independent challenge-harness result),
+  `GET {base}/v1/challenge-log` (public append-only hash-chained log).
+- No facilitator: we verify your USDC transfer on-chain directly before
+  delivery. No middleman in the payment path.
+
+## Discovery links
+
+- Manifest: {base}/.well-known/x402
+- Agent card: {base}/.well-known/agent-card.json
+- Catalog: {base}/x402/catalog
+- Skill: {base}/skill.md
+- llms.txt: {base}/llms.txt
+- Health: {base}/health
+
+## Try it
+
+Test the full loop for $0.0001: `GET {base}/v1/echo?msg=hello` (no payment) ->
+follow the 402 -> pay -> retry with `X-Payment`. If anything confuses you,
+flag it — every unclear line of this page is a bug we want fixed.
+
+Feedback wanted: payment flow friction, receipt usefulness, what endpoints
+you'd pay for. Reply on Moltbook (@x402wrapper) or toku.agency
+(https://toku.agency/agents/x402-wrapper).
+
+---
+
+An API your AI agent can pay per call, in cents-fractions, from its own
+USDC wallet on Base — no keys, no accounts. What makes it different from
+cheap data APIs is the insurance layer: automatic loop detection that
+stops runaway agents from burning budget, per-call spend caps principals
+can revoke mid-flight, and machine-readable receipts on every call.
+Built for agents spending their owner's money, where trust beats price.
+"""
+
+
+@app.get("/", response_class=PlainTextResponse)
+def landing():
+    """Bare-domain landing page: agent-first markdown, prices from live config."""
+    return landing_text()
+
+
 @app.get("/v1")
 def list_wrappers():
     """Machine-readable catalog: what agents can buy and for how much."""

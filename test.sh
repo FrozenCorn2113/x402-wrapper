@@ -35,6 +35,11 @@ check() { # check <label> <expected_code> <curl args...>
 echo "--- health ---"
 check "health" 200 "$BASE/health"
 
+echo "--- root landing page ---"
+check "root landing page" 200 "$BASE/"
+grep -qi 'financial insurance' /tmp/wrap_test.json && grep -q 'AGENT_LOOP_DETECTED' /tmp/wrap_test.json && echo "PASS: root landing copy present" && pass=$((pass+1)) || { echo "FAIL: root landing copy"; fail=$((fail+1)); }
+grep -q '0x7f7e1e0cc60f2623398140d473276c015686e75c\|0xREPLACE_ME_BEFORE_DEPLOY\|payTo from GET' /tmp/wrap_test.json && grep -q '1000' /tmp/wrap_test.json && echo "PASS: root landing prices/pay_to rendered" && pass=$((pass+1)) || { echo "FAIL: root landing prices"; fail=$((fail+1)); }
+
 echo "--- catalog ---"
 check "catalog lists 3 wrappers" 200 "$BASE/v1"
 grep -q weather-now /tmp/wrap_test.json && grep -q crypto-price /tmp/wrap_test.json && echo "PASS: catalog content" && pass=$((pass+1)) || { echo "FAIL: catalog content"; fail=$((fail+1)); }

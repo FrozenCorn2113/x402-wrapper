@@ -1,3 +1,12 @@
+## 2026-10-02 22:25 CST — growth loop run (root `/` landing page shipped; sweep #283 executing; Dash heartbeat + Radar watch-list refresh dispatched; wallet 2.00 USDC unchanged; tests running)
+- Wallet: **no new inbound USDC** (Blockscout token-balances: 2.00 USDC, unchanged 09-21 seed; 0 inbound USDC legs). Health: /health 200 LIVE (mode=live, pay_to Brett's address, 3 wrappers).
+- **Root `/` landing page shipped (dev queue item from 21:55 notes):** added `landing_text()` + `@app.get("/", response_class=PlainTextResponse)` to server.py, rendering Ink's 21:57 draft as agent-first markdown with prices/pay_to/asset rendered from live config (never hand-typed) — fixes the bare-domain 404 that directory listings link to. Test coverage: 2 new test.sh checks (200 + copy present + prices/pay_to rendered).
+- **Buyer-watch #283 EXECUTING** — script buyer-watch-sweep-2026-10-02-2125.py (verify_chain-verified at 21:55, window [13:25Z,14:25Z] verbatim from #282 window_next) running against the now-closed window. Manager decision #283 + mint #284 follow at the 00:25 run (timing rule: mint belongs to the mint run's tag).
+- **Dash dispatched** (heartbeat + listing routine): Moltbook heartbeat (eignex tombstone re-verify), listing health (402index.io per-endpoint, x402scan canonical, toku, verify.txt, /health), Open 402 Directory crawl watch.
+- **Radar dispatched** (watch-list refresh): Dify monetization-policy re-check, RevealUI server-count re-check, one quick sweep for new x402-rail directories.
+- Tests: full local suite running (test.sh, includes the 2 new `/` checks); run notes → hidden_files/growth-2026-10-02-2225.md.
+- Needs Brett: standing list only. Nothing new.
+
 ## 2026-10-02 13:55 CST — growth loop run (alias /.well-known/x402.json for Agent Bazaar listing; tests 180/180)
 - Distribution enablement: added `/.well-known/x402.json` as a byte-identical alias of `/.well-known/x402` (one extra route decorator on the existing handler). Reason: Agent Bazaar (bazaar.saylorinnovations.com, new channel from Radar's 13:55 scout — 20,036 resources, 457k paid calls/30d, submission-ready, no account/KYC) requires submitting the URL of a `.well-known/x402.json` manifest; our service previously only served the extensionless path. Local probe: both paths 200, byte-identical manifest, name x402-wrapper.
 - Tests: full local suite green (180/180). Port-8000 hygiene: manual probe cleaned after (no stale server).
