@@ -416,8 +416,9 @@ def loop_protection_report():
 
 
 @app.get("/.well-known/x402")
+@app.get("/.well-known/x402.json")
 def well_known_x402():
-    """Unprotected discovery manifest for x402 directories (e.g. x402scan)."""
+    """Unprotected discovery manifest for x402 directories (e.g. x402scan, Agent Bazaar)."""
     base = core.public_base_url()
     catalog = core.catalog()
     pay_to = catalog[0]["pay_to"] if catalog else None
